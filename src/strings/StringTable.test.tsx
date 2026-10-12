@@ -91,7 +91,6 @@ const ROWS = {
       key: "greeting",
       source: "Hello",
       target: "Hallo",
-      targetPresent: true,
       status: "translated",
       tokenMismatchAccepted: false,
     },
@@ -99,7 +98,6 @@ const ROWS = {
       key: "bye",
       source: "Bye",
       target: "",
-      targetPresent: false,
       status: "untranslated",
       tokenMismatchAccepted: false,
     },
@@ -107,7 +105,6 @@ const ROWS = {
       key: "token",
       source: "Hi [FarmName]",
       target: "Hallo",
-      targetPresent: true,
       status: "outdated",
       tokenMismatchAccepted: false,
       section: "Dialogue",
@@ -118,7 +115,6 @@ const ROWS = {
       key: "tomorrow",
       source: "See you tomorrow",
       target: "",
-      targetPresent: false,
       status: "untranslated",
       tokenMismatchAccepted: false,
     },
@@ -847,7 +843,6 @@ describe("StringTable workbench", () => {
               key: `key-${index}`,
               source: "Source",
               target: index === 199 ? "" : "Translation",
-              targetPresent: index !== 199,
               status: index === 199 ? "untranslated" : "translated",
             }))
           : null,
@@ -923,7 +918,6 @@ describe("StringTable workbench", () => {
           key: "review",
           source: "Review me",
           target: "Prüfen",
-          targetPresent: true,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -1092,7 +1086,6 @@ describe("StringTable workbench", () => {
                 key: "asset-key",
                 source: "Asset source",
                 target: "",
-                targetPresent: false,
                 status: "untranslated",
                 tokenMismatchAccepted: false,
               },
@@ -1212,7 +1205,6 @@ describe("StringTable workbench", () => {
           key: "light",
           source: "Light",
           target: "IŞIK",
-          targetPresent: true,
           status: "translated",
           tokenMismatchAccepted: false,
         },
@@ -1316,7 +1308,6 @@ describe("StringTable workbench", () => {
           key: "review",
           source: "Review me",
           target: "Prüfen",
-          targetPresent: true,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -1762,7 +1753,6 @@ describe("StringTable workbench", () => {
           key: relativeDir === "i18n" ? "first" : "second",
           source: relativeDir,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
           section: "Shared section",
@@ -2152,7 +2142,6 @@ describe("StringTable workbench", () => {
                 ? {
                     ...row,
                     target: "Bye",
-                    targetPresent: true,
                     status: "translated" as const,
                   }
                 : row,
@@ -2258,7 +2247,6 @@ describe("StringTable workbench", () => {
           key: "draft",
           source: "Draft",
           target: "Entwurf",
-          targetPresent: false,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -2279,7 +2267,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "draft",
         target: "",
-        targetPresent: false,
       }),
     );
     expect(rowFor("draft")).toHaveAttribute("data-status", "untranslated");
@@ -2484,7 +2471,6 @@ describe("StringTable workbench", () => {
           key: "empty",
           source: "",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2492,7 +2478,6 @@ describe("StringTable workbench", () => {
           key: "nul",
           source: "Before\0after",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2500,7 +2485,6 @@ describe("StringTable workbench", () => {
           key: "oversized",
           source: oversizedSource,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2508,7 +2492,6 @@ describe("StringTable workbench", () => {
           key: "boundary",
           source: exactLimitSource,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2516,7 +2499,6 @@ describe("StringTable workbench", () => {
           key: "valid",
           source: "Translate me",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2732,7 +2714,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "bye",
         target: "Tschüss",
-        targetPresent: false,
       }),
     );
     expect(onStringSaved).toHaveBeenNthCalledWith(
@@ -2740,7 +2721,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "token",
         target: "Hallo [FarmName]",
-        targetPresent: true,
       }),
     );
     expect(

@@ -697,7 +697,6 @@ describe("App shell", () => {
             key: "fruit",
             source: "Apple",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -810,7 +809,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -1296,14 +1294,12 @@ describe("App shell", () => {
             key: "new.key",
             source: "New",
             target: "Neu",
-            targetPresent: true,
             status: "translated",
           },
           {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -1683,7 +1679,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -1799,7 +1794,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "review-needed",
             tokenMismatchAccepted: true,
           },
@@ -1892,7 +1886,6 @@ describe("App shell", () => {
               key: "greeting",
               source: "Hello",
               target: "",
-              targetPresent: false,
               status: "untranslated",
             },
           ]);
@@ -1994,7 +1987,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2078,7 +2070,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2166,7 +2157,6 @@ describe("App shell", () => {
                 currentSettings.modsPath !== CONFIGURED.modsPath
                   ? "Current workspace translation"
                   : "",
-              targetPresent: false,
               status: "untranslated",
             },
           ]);
@@ -2289,14 +2279,12 @@ describe("App shell", () => {
             key: "first",
             source: "First",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
           {
             key: "second",
             source: "Second",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2427,14 +2415,12 @@ describe("App shell", () => {
             key: "first",
             source: "First",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
           {
             key: "second",
             source: "Second",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2568,7 +2554,6 @@ describe("App shell", () => {
             key: first ? "first" : "second",
             source: first ? "First" : "Second",
             target: completed ? (first ? "Erste" : "Zweite") : "",
-            targetPresent: completed,
             status: completed ? "review-needed" : "untranslated",
           },
         ]);
@@ -2697,7 +2682,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2767,7 +2751,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello#$b#there",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -3260,7 +3243,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -3333,7 +3315,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -3441,14 +3422,12 @@ describe("App shell", () => {
             key: "new.key",
             source: "New",
             target: "Neu",
-            targetPresent: true,
             status: "translated",
           },
           {
             key: "broken.key",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -4493,7 +4472,6 @@ describe("App shell", () => {
                   key: "festival.answer",
                   source: "The dance starts at noon",
                   target: "Der Tanz beginnt mittags",
-                  targetPresent: true,
                   status: "translated",
                 },
               ]
@@ -4560,7 +4538,6 @@ describe("App shell", () => {
                   key: "festival.answer",
                   source: "The dance starts at noon",
                   target: "Der Tanz beginnt mittags",
-                  targetPresent: true,
                   status: "translated",
                 },
               ]
@@ -4634,7 +4611,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "Hallo KI",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -4699,14 +4675,12 @@ describe("App shell", () => {
             key: "changed.key",
             source: "New source",
             target: "Old target",
-            targetPresent: true,
             status: "outdated",
           },
           {
             key: "review.key",
             source: "Review source",
             target: "AI target",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -4755,7 +4729,6 @@ describe("App shell", () => {
             key: "token.issue",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -4955,7 +4928,6 @@ describe("App shell", () => {
             key: "token.issue",
             source: "Hello {{name}}",
             target,
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -5003,7 +4975,6 @@ describe("App shell", () => {
             key: "new.key",
             source: "New source",
             target: "",
-            targetPresent: false,
             status: "untranslated",
             tokenMismatchAccepted: false,
           },
@@ -5056,7 +5027,6 @@ describe("App shell", () => {
             key: "changed.key",
             source: "Updated source",
             target: "Existing translation",
-            targetPresent: true,
             status: "outdated",
             tokenMismatchAccepted: false,
           },
@@ -5137,7 +5107,6 @@ it("keeps App work progress and export eligibility coherent after clearing a per
           key: "blank",
           source: "",
           target: "Personal",
-          targetPresent: true,
           status: "translated",
           tokenMismatchAccepted: false,
         },

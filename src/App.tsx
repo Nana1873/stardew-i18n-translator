@@ -1827,11 +1827,7 @@ export function App() {
       if (!current || !current.problems.some((problem) => problem.id === id)) {
         return current;
       }
-      const errors = validate(
-        snapshot.source,
-        snapshot.target,
-        snapshot.targetPresent,
-      ).filter(
+      const errors = validate(snapshot.source, snapshot.target).filter(
         (issue) =>
           issue.severity === "error" &&
           !(

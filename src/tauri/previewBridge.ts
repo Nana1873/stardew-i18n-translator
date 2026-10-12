@@ -66,6 +66,8 @@ const DOWNLOADS = "C:\\Preview\\Downloads";
 interface RowState extends StringRow {
   /** Source as it was when the translation was saved (for Changed). */
   savedSource?: string;
+  /** Whether the simulated target file has this key (for export results). */
+  inTargetFile: boolean;
 }
 
 interface HistoryRecord extends OperationHistoryEntry {
@@ -95,7 +97,7 @@ function seed(): void {
         key: s.key,
         source: s.source,
         target,
-        targetPresent: present,
+        inTargetFile: present,
         status: s.status ?? (blank ? "translated" : "untranslated"),
         tokenMismatchAccepted: Boolean(s.tokenMismatchAccepted),
         section: s.section ?? null,
@@ -157,7 +159,7 @@ function hasText(row: RowState): boolean {
 
 function blockingIssues(row: RowState): string[] {
   if (row.target === "" || row.tokenMismatchAccepted) return [];
-  return validate(row.source, row.target, row.targetPresent)
+  return validate(row.source, row.target)
     .filter(
       (issue) =>
         issue.severity === "error" &&
@@ -195,7 +197,7 @@ function scannedMod(mod: FixtureMod): ScannedMod {
         relativeDir: "i18n",
         defaultPath,
         targetPath,
-        targetExists: all.some((row) => row.targetPresent),
+        targetExists: all.some((row) => row.inTargetFile),
         totalKeys: all.length,
         translatedKeys: translated,
         noTranslationNeededKeys: blank,
@@ -270,8 +272,7 @@ function saveRow(
   map.set(key, {
     ...row,
     target,
-    // Like the scanner: only an unchanged installed value counts as present.
-    targetPresent: row.targetPresent && target === row.target,
+    inTargetFile: target !== "" || row.inTargetFile,
     status: target === "" && row.source.trim() !== "" ? "untranslated" : status,
     tokenMismatchAccepted: accepted,
     savedSource: source,
@@ -334,7 +335,7 @@ function exportMod(
       targetPath: file.targetPath,
       written: written > 0,
       removed: false,
-      backedUp: map.size > 0 && [...map.values()].some((r) => r.targetPresent),
+      backedUp: map.size > 0 && [...map.values()].some((r) => r.inTargetFile),
       writtenKeys: written,
       untranslated,
       outdated,

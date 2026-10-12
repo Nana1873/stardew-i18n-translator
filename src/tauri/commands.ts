@@ -223,8 +223,6 @@ export interface StringRow {
   key: string;
   source: string;
   target: string;
-  /** Whether the key exists in the target file (distinguishes "" from absent). */
-  targetPresent: boolean;
   status: StringStatus;
   /** The translator explicitly accepted this exact protected-token mismatch. */
   tokenMismatchAccepted: boolean;

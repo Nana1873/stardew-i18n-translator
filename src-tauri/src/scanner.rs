@@ -721,9 +721,6 @@ pub struct StringRow {
     pub key: String,
     pub source: String,
     pub target: String,
-    /// Whether the installed target file holds this exact value for the key
-    /// (distinguishes an installed "" from an absent or app-cleared entry).
-    pub target_present: bool,
     /// untranslated | translated | review-needed | outdated
     pub status: String,
     /// The translator explicitly accepted the current protected-token mismatch.
@@ -775,11 +772,6 @@ pub fn load_strings_checked(
             let source_text = value_to_text(value);
             let (effective_target, status) =
                 resolve_string(&source_text, target.get(key), state, relative_dir, key);
-            // Only the installed file's own value counts: a value cleared in
-            // the app is not an empty entry the game would read.
-            let target_present = target
-                .get(key)
-                .is_some_and(|installed| value_to_text(installed) == effective_target);
             let token_mismatch_accepted = state
                 .get(&translations::entry_key(relative_dir, key))
                 .is_some_and(|stored| {
@@ -793,7 +785,6 @@ pub fn load_strings_checked(
                 key: key.clone(),
                 source: source_text,
                 target: effective_target,
-                target_present,
                 status,
                 token_mismatch_accepted,
                 section: sections.get(&folded_key(key)).cloned(),
@@ -2640,7 +2631,6 @@ mod tests {
         );
         assert_eq!(rows[0].target, "Hallo");
         assert_eq!(rows[0].status, "translated");
-        assert!(rows[0].target_present);
         assert_eq!(rows[1].target, "Tschüss");
 
         // Counts agree: both keys are translated, none awaiting review.
@@ -3216,20 +3206,6 @@ mod blank_source_tests {
     }
 
     #[test]
-    fn app_cleared_value_is_not_an_installed_empty_entry() {
-        // Installed file says "Hallo"; the app saved "" (Clear). Only an
-        // installed "" makes the game show its no-translation placeholder.
-        let f = Fixture::new("Hello", Some("Hallo"));
-        f.save("Hello", "", "untranslated");
-        let row = &f.rows()[0];
-        assert_eq!(row.target, "");
-        assert!(!row.target_present);
-
-        let installed_empty = Fixture::new("Hello", Some(""));
-        assert!(installed_empty.rows()[0].target_present);
-    }
-
-    #[test]
     fn intentional_space_survives_reload_counts_and_source_changes() {
         let f = Fixture::new("Tree", None);
         let status = translations::status_for_save("Tree", " ", "translated");
@@ -3343,7 +3319,6 @@ mod blank_source_tests {
                     assert_eq!(row.status, "translated");
                     assert_eq!(row.source, source);
                     assert_eq!(row.target, target.unwrap_or_default());
-                    assert_eq!(row.target_present, target.is_some());
                     let component = &scan.mods[0];
                     assert_eq!(
                         (

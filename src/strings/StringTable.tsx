@@ -179,7 +179,6 @@ export interface SavedStringSnapshot {
   key: string;
   source: string;
   target: string;
-  targetPresent: boolean;
   tokenMismatchAccepted: boolean;
 }
 
@@ -357,7 +356,7 @@ const validationIssuesByRow = new WeakMap<Row, ReturnType<typeof validate>>();
 function rowValidationIssues(row: Row) {
   let issues = validationIssuesByRow.get(row);
   if (!issues) {
-    const validated = validate(row.source, row.target, row.targetPresent);
+    const validated = validate(row.source, row.target);
     issues = row.tokenMismatchAccepted
       ? validated.map((issue) =>
           issue.ruleId === "token-missing" || issue.ruleId === "token-added"
@@ -1597,9 +1596,6 @@ export function StringTable({
         ? {
             ...candidate,
             target,
-            // An edited value is no longer the installed file's own value.
-            targetPresent:
-              candidate.targetPresent && target === candidate.target,
             status: derivedStringStatus(candidate.source, target, nextStatus),
             tokenMismatchAccepted,
           }
@@ -1623,7 +1619,6 @@ export function StringTable({
       key: row.key,
       source: row.source,
       target,
-      targetPresent: row.targetPresent,
       tokenMismatchAccepted,
     });
   }
@@ -1738,7 +1733,6 @@ export function StringTable({
           return {
             ...row,
             target: change.target,
-            targetPresent: row.targetPresent && change.target === row.target,
             status: derivedStringStatus(
               row.source,
               change.target,
@@ -1772,7 +1766,6 @@ export function StringTable({
           key: row.key,
           source: row.source,
           target,
-          targetPresent: row.targetPresent,
           tokenMismatchAccepted,
         });
       }
@@ -1916,7 +1909,6 @@ export function StringTable({
         key: updated.key,
         source: updated.source,
         target: updated.target,
-        targetPresent: updated.targetPresent,
         tokenMismatchAccepted: false,
       });
     }
@@ -3528,9 +3520,7 @@ function RowView({
           : "Must fix: this text stays English in the game until fixed."
       : acceptedTokenMismatch
         ? "Kept on purpose: exported as written."
-        : issues.every((issue) => issue.ruleId === "empty-target")
-          ? "Worth a look:"
-          : "Worth a look: exported as written.";
+        : "Worth a look: exported as written.";
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";

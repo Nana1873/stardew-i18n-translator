@@ -20,7 +20,6 @@ function row(overrides: Partial<EditorRow> = {}): EditorRow {
     source: "Hello",
     target: "Hallo",
     file: "i18n",
-    targetPresent: true,
     status: "translated",
     tokenMismatchAccepted: false,
     ...overrides,
@@ -264,7 +263,7 @@ describe("StringEditor", () => {
     });
     const onSave = vi.fn();
     const first = renderEditor(
-      { target: "", targetPresent: false, status: "untranslated" },
+      { target: "", status: "untranslated" },
       onTranslate,
       undefined,
       undefined,
@@ -284,7 +283,6 @@ describe("StringEditor", () => {
       <StringEditor
         row={row({
           target: "Hallo Welt",
-          targetPresent: true,
           status: "review-needed",
         })}
         index={0}
@@ -317,7 +315,7 @@ describe("StringEditor", () => {
     const pending = deferred<EditorTranslationResult>();
     const onTranslate = vi.fn(() => pending.promise);
     const { onSave, onClose, onNavigate } = renderEditor(
-      { target: "", targetPresent: false, status: "untranslated" },
+      { target: "", status: "untranslated" },
       onTranslate,
     );
 
@@ -356,7 +354,7 @@ describe("StringEditor", () => {
     const onCancelTranslate = vi.fn();
     render(
       <StringEditor
-        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        row={row({ target: "", status: "untranslated" })}
         index={0}
         total={2}
         modName="Test Mod"
@@ -400,7 +398,7 @@ describe("StringEditor", () => {
     const onClose = vi.fn();
     render(
       <StringEditor
-        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        row={row({ target: "", status: "untranslated" })}
         index={0}
         total={2}
         modName="Test Mod"
@@ -439,7 +437,6 @@ describe("StringEditor", () => {
       <StringEditor
         row={row({
           target: "",
-          targetPresent: false,
           status: "untranslated",
         })}
         index={0}

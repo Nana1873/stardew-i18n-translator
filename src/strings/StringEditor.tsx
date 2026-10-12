@@ -94,7 +94,6 @@ export interface EditorRow {
   /** Effective current target (saved edit or imported value). */
   target: string;
   file: string;
-  targetPresent: boolean;
   status: StringStatus;
   /** This exact saved source/target pair was accepted despite token errors. */
   tokenMismatchAccepted: boolean;
@@ -831,11 +830,7 @@ export function StringEditor({
       (valueTokenCounts.get(token) ?? 0) < required,
   );
   // The installed empty value only matters while the draft still is it.
-  const issues = validate(
-    row.source,
-    value,
-    row.targetPresent && value === row.target,
-  );
+  const issues = validate(row.source, value);
   // Severity per token, so each chip can say whether it blocks the export.
   // Mirrors validate(): an empty field has no token findings yet.
   const tokenSeverities = new Map(
@@ -1280,11 +1275,7 @@ export function StringEditor({
                               )
                               ? "Must fix or Save anyway – until then this string stays English in the game"
                               : "Must fix"
-                            : group.every(
-                                  (issue) => issue.ruleId === "empty-target",
-                                )
-                              ? "Worth a look"
-                              : "Worth a look – exported as written"}
+                            : "Worth a look – exported as written"}
                         </span>
                         {group.map((issue, i) => (
                           <span
