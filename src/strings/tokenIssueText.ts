@@ -50,6 +50,10 @@ export function tokenConsequence(difference: TokenDifference): string {
     return missing
       ? "The attached item or reward would not be given."
       : "It adds an item or reward the English mail does not give.";
+  if (token === "*")
+    return "In a $y reply it starts a new dialogue box, so the page structure changes.";
+  if (token === "_")
+    return "It separates the question, answers, and replies of a $y quick response.";
   if (token === "[#]")
     return missing
       ? "The letter title would show as part of the letter text."

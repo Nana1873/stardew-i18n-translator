@@ -81,7 +81,9 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             continue;
         }
 
-        if let Some((end, action_tokens)) = read_betas_message(chars, offset) {
+        if let Some((end, action_tokens)) =
+            read_betas_message(chars, offset).or_else(|| read_quick_response(chars, offset))
+        {
             tokens.extend(action_tokens);
             offset = end;
             continue;
@@ -296,6 +298,12 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         } else {
             "It adds an item or reward the English mail does not give."
         };
+    }
+    if token == "*" {
+        return "In a $y reply it starts a new dialogue box, so the page structure changes.";
+    }
+    if token == "_" {
+        return "It separates the question, answers, and replies of a $y quick response.";
     }
     if token == "[#]" {
         return if missing {
@@ -717,6 +725,59 @@ fn read_mail_command(chars: &[char], offset: usize) -> Option<usize> {
     find_sub(chars, offset, "%%").map(|i| i + 2)
 }
 
+/// Index of the opening quote when `$y` and spaces start a quick response at
+/// `offset` (the game reads the command word, then the first `'`). Mirrors TS
+/// `quickResponseQuote`.
+fn quick_response_quote(chars: &[char], offset: usize) -> Option<usize> {
+    if !starts_with(chars, offset, "$y ") {
+        return None;
+    }
+    let mut index = offset + 3;
+    while chars.get(index) == Some(&' ') {
+        index += 1;
+    }
+    (chars.get(index) == Some(&'\'')).then_some(index)
+}
+
+/// `$y 'question_answer_reply_answer_reply'`: the game splits the quoted text
+/// at `_` into a question and answer/reply pairs, so every separator is
+/// protected. Underscores inside `{{tokens}}` or `[tokens]` are not
+/// separators. A single `*` in a reply becomes a `#$b#` page break in the game
+/// (`**` is a literal asterisk), so it is protected too. Mirrors TS
+/// `readQuickResponse`.
+fn read_quick_response(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
+    let start = quick_response_quote(chars, offset)? + 1;
+    // The last quote before the next page break closes it, so an apostrophe
+    // such as "Don't" stays part of the text.
+    let page = find_char(chars, start, '#').unwrap_or(chars.len());
+    let close = (start..page).rev().find(|&i| chars[i] == '\'')?;
+    let body = &chars[start..close];
+    let mut tokens = vec!["$y".to_string(), "'".to_string(), "'".to_string()];
+    // Segment 0 is the question, odd segments are answers, and even segments
+    // from 2 on are replies; only replies turn `*` into a page break.
+    let mut segment = 0;
+    let mut index = 0;
+    while index < body.len() {
+        if let Some(end) = read_content_patcher(body, index).or_else(|| read_bracket(body, index)) {
+            index = end;
+            continue;
+        }
+        if starts_with(body, index, "**") {
+            index += 2;
+            continue;
+        }
+        if body[index] == '_' {
+            tokens.push("_".to_string());
+            segment += 1;
+        } else if body[index] == '*' && segment >= 2 && segment % 2 == 0 {
+            tokens.push("*".to_string());
+        }
+        index += 1;
+    }
+    tokens.extend(extract_chars(body));
+    Some((close + 1, tokens))
+}
+
 /// BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
 /// NPC and remaining arguments stay literal; complex messages stay opaque.
 fn read_betas_message(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
@@ -817,6 +878,11 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
     }
     // `#${He^She}$ ...` starts a new page with a gender switch.
     if chars.get(offset + 2) == Some(&'{') {
+        return None;
+    }
+    // `#$y '…'` starts a quick response on a new page; its own reader protects
+    // the separators instead of one opaque token for the whole page.
+    if quick_response_quote(chars, offset + 1).is_some() {
         return None;
     }
 

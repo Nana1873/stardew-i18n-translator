@@ -36,17 +36,47 @@ pub(crate) fn read_json_text(path: &Path) -> Result<String, String> {
 
     // Read at most one byte past the boundary as a second check in case the
     // file grows between metadata inspection and the read.
-    let mut body = String::with_capacity(length as usize);
+    let mut bytes = Vec::with_capacity(length as usize);
     file.take(MAX_JSON_BYTES + 1)
-        .read_to_string(&mut body)
-        .map_err(|error| format!("Could not read {} as UTF-8: {error}", path.display()))?;
-    if body.len() as u64 > MAX_JSON_BYTES {
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_JSON_BYTES {
         return Err(format!(
             "{} exceeds the 64 MiB JSON input limit.",
             path.display()
         ));
     }
-    Ok(body)
+    decode_text(bytes).map_err(|error| format!("Could not read {} as {error}", path.display()))
+}
+
+/// SMAPI reads JSON through .NET, which honours a UTF-16 byte order mark, so
+/// translation files saved as UTF-16 by Windows editors work in the game.
+/// Everything else must be UTF-8 (an optional UTF-8 BOM is stripped later by
+/// the lenient parser).
+fn decode_text(bytes: Vec<u8>) -> Result<String, String> {
+    let utf16 = |little_endian: bool| {
+        let body = &bytes[2..];
+        if !body.len().is_multiple_of(2) {
+            return Err("UTF-16: the file ends in the middle of a character".to_string());
+        }
+        let units: Vec<u16> = (0..body.len())
+            .step_by(2)
+            .map(|index| {
+                let pair = [body[index], body[index + 1]];
+                if little_endian {
+                    u16::from_le_bytes(pair)
+                } else {
+                    u16::from_be_bytes(pair)
+                }
+            })
+            .collect();
+        String::from_utf16(&units).map_err(|error| format!("UTF-16: {error}"))
+    };
+    match bytes.as_slice() {
+        [0xFF, 0xFE, ..] => utf16(true),
+        [0xFE, 0xFF, ..] => utf16(false),
+        _ => String::from_utf8(bytes).map_err(|error| format!("UTF-8: {error}")),
+    }
 }
 
 #[cfg(test)]
@@ -76,6 +106,32 @@ mod tests {
 
         assert_eq!(read_json_text(&path).unwrap(), "{\"greeting\":\"Olá\"}");
 
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reads_utf16_files_with_a_byte_order_mark() {
+        let dir = crate::test_support::temp_dir("utf16-json");
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = "{\"greeting\":\"Olá\"}";
+        let little: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        let big: Vec<u8> = [0xFE, 0xFF]
+            .into_iter()
+            .chain(text.encode_utf16().flat_map(u16::to_be_bytes))
+            .collect();
+        std::fs::write(dir.join("le.json"), little).unwrap();
+        std::fs::write(dir.join("be.json"), big).unwrap();
+
+        assert_eq!(read_json_text(&dir.join("le.json")).unwrap(), text);
+        assert_eq!(read_json_text(&dir.join("be.json")).unwrap(), text);
+
+        std::fs::write(dir.join("latin1.json"), b"{\"a\":\"\xe9\"}").unwrap();
+        assert!(read_json_text(&dir.join("latin1.json"))
+            .unwrap_err()
+            .contains("as UTF-8"));
         std::fs::remove_dir_all(dir).ok();
     }
 
