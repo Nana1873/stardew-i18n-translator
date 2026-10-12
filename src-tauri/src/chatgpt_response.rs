@@ -187,6 +187,7 @@ fn separator(bytes: &[u8]) -> Option<(usize, usize)> {
 pub async fn consume(
     response: reqwest::Response,
     progress: ProviderProgressCallback,
+    started: std::time::Instant,
 ) -> Result<String, ProviderFailure> {
     let mut stream = response.bytes_stream();
     let mut buffer = Vec::new();
@@ -195,7 +196,10 @@ pub async fn consume(
     let mut is_json = None;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| {
-            if error.is_timeout() && !error.is_connect() {
+            if error.is_timeout()
+                && !error.is_connect()
+                && crate::chatgpt::reached_time_limit(started)
+            {
                 crate::chatgpt::timeout_failure()
             } else {
                 ProviderFailure::Transient(
@@ -381,7 +385,12 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(consume(response, progress()).await.unwrap(), "Grüße");
+        assert_eq!(
+            consume(response, progress(), std::time::Instant::now())
+                .await
+                .unwrap(),
+            "Grüße"
+        );
         server.await.unwrap();
     }
 }

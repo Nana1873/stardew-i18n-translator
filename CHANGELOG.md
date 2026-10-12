@@ -41,6 +41,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - Saved translations, settings, the glossary, and exported translation files
   are flushed to disk before they replace the previous file, so a power loss
   right after a save cannot leave an empty file behind.
+- A ChatGPT connection that stalls early is reported as an interrupted
+  connection and retried, instead of as a batch that exceeded the five-minute
+  limit and was split.
+- If a package breaks between the preview and the build of the ZIP for all
+  mods, the result and the Activity log name it as left out instead of leaving
+  it out without a word.
 - A he/she switch inside another one is a token error. The game closes a
   switch at the first `}$`, so the nested version showed broken text while the
   app accepted it.
