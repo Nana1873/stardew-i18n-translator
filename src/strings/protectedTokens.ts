@@ -92,6 +92,16 @@ function extractTokens(value: string): string[] {
       continue;
     }
 
+    // `#$y '…'`: the page break belongs to the quick response; without it the
+    // game shows the command as text, so it is protected with it.
+    if (value[offset] === "#" && quickResponseQuote(value, offset + 1) >= 0) {
+      const quick = readQuickResponse(value, offset + 1);
+      if (quick) {
+        tokens.push("#$y", ...quick.tokens.slice(1));
+        offset = quick.end;
+        continue;
+      }
+    }
     const action =
       readBetasMessage(value, offset) ?? readQuickResponse(value, offset);
     if (action) {
@@ -225,9 +235,9 @@ export function tokenSeverity(
     isGenderSwitchShape(token) ||
     token === "@" ||
     // A bare `^` or `#` changes the page or gender split in dialogue but is
-    // plain text in letters and UI strings; translators decide (PD-1).
-    token === "^" ||
-    token === "#" ||
+    // plain text in letters and UI strings; translators decide (PD-1), unless
+    // the change puts two different portraits on one page.
+    ((token === "^" || token === "#") && !introducesMultiplePortraits) ||
     (isPortraitCommand(token) && !introducesMultiplePortraits) ||
     // A missing placeholder only drops its value; a renamed or extra one
     // stays visible as literal `{{...}}` or breaks string.Format.

@@ -119,7 +119,8 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
 - Warnings are cosmetic or legitimate translation choices: portrait changes
   (a missing index falls back to portrait 0), a cleanly removed or reshaped
   gender switch, `@`, a dropped placeholder or `[ArticleFor]`, and a changed
-  bare `^` or `#`. Those two split pages and genders in dialogue but are plain
+  bare `^` or `#` that does not put two different portraits on one page or
+  detach a `$y` quick response. Those two split pages and genders in dialogue but are plain
   text in letters (`^` is a line break) and UI strings, and the app cannot tell
   these apart reliably, so the translator decides.
 

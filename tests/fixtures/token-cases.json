@@ -241,7 +241,7 @@
     },
     {
       "value": "Hello#$y 'Q_A_R'#Bye",
-      "tokens": ["#", "$y", "'", "'", "_", "_", "#"]
+      "tokens": ["#$y", "'", "'", "_", "_", "#"]
     },
     {
       "value": "$y 'Q *sigh*_A_R'",
@@ -618,6 +618,24 @@
       "source": "Slot {{slot}}",
       "target": "Platz #{{slot}}",
       "blocked": false
+    },
+    {
+      "name": "dropping # that merges two different portraits is an error",
+      "source": "Hi.$h#Bye.$s",
+      "target": "Hallo.$h Tschüss.$s",
+      "blocked": true
+    },
+    {
+      "name": "dropping ^ that merges two different portraits is an error",
+      "source": "Hi.$h^Hey.$s",
+      "target": "Hallo.$h Hey.$s",
+      "blocked": true
+    },
+    {
+      "name": "dropping the # before a quick response is an error",
+      "source": "Hi.#$y 'Q?_Yes_Great'",
+      "target": "Hallo. $y 'Frage?_Ja_Toll'",
+      "blocked": true
     }
   ],
   "explanations": [

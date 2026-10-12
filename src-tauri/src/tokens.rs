@@ -81,6 +81,16 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             continue;
         }
 
+        // `#$y '…'`: the page break belongs to the quick response; without it
+        // the game shows the command as text, so it is protected with it.
+        if chars[offset] == '#' && quick_response_quote(chars, offset + 1).is_some() {
+            if let Some((end, quick)) = read_quick_response(chars, offset + 1) {
+                tokens.push("#$y".to_string());
+                tokens.extend(quick.into_iter().skip(1));
+                offset = end;
+                continue;
+            }
+        }
         if let Some((end, action_tokens)) =
             read_betas_message(chars, offset).or_else(|| read_quick_response(chars, offset))
         {
@@ -255,6 +265,7 @@ fn difference_message(difference: &TokenDifference) -> String {
     }
     match token {
         "@" => return format!("The player name @ {change} {counts}. Fine if intended."),
+        "^" | "#" if difference.is_error() => return format!("{token} {change} {counts}: a dialogue page now has two different portraits, and the second shows as raw text."),
         "^" => return format!("^ {change} {counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
         "{" | "}" => return format!("A single {token} {change} {counts}. The game treats single braces as commands and hides text."),
         "#" => return format!("# {change} {counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
@@ -444,9 +455,9 @@ fn token_severity(
     let harmless = is_gender_switch_shape(token)
         || token == "@"
         // A bare `^` or `#` changes the page or gender split in dialogue but is
-        // plain text in letters and UI strings; translators decide (PD-1).
-        || token == "^"
-        || token == "#"
+        // plain text in letters and UI strings; translators decide (PD-1),
+        // unless the change puts two different portraits on one page.
+        || (matches!(token, "^" | "#") && !introduces_multiple_portraits)
         || (is_portrait_command(token) && !introduces_multiple_portraits)
         // A missing placeholder only drops its value; a renamed or extra one
         // stays visible as literal `{{...}}` or breaks string.Format.

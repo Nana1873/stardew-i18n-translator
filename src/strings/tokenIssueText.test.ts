@@ -37,7 +37,7 @@ describe("describeTokenIssue", () => {
             targetCount: 0,
             severity: "warning",
           },
-          { token: "^", sourceCount: 1, targetCount: 0, severity: "error" },
+          { token: "^", sourceCount: 1, targetCount: 0, severity: "warning" },
         ],
         "Hallo a ${x^y",
       ).map((item) => item.message),

@@ -13,7 +13,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A changed bare `^` or `#` is a note instead of a token error, so the string
   is exported. In dialogue they split pages and genders, but in letters `^` is a
   line break and in UI strings `#` is ordinary text, so the translator decides.
-  Dialogue commands such as `#$b#` stay protected.
+  It stays an error when it puts two different portraits on one page, and the
+  `#` before a `$y` quick response stays protected, like `#$b#`.
 - Every token finding now says what it does in the game, for example that a
   missing `[#]` shows the letter title as part of the letter text or that a
   missing `%item … %%` means the attached item is not given. Notes end with

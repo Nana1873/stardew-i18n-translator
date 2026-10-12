@@ -100,6 +100,8 @@ function genericMessage(difference: TokenDifference): string {
       : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
   if (token === "@")
     return `The player name @ ${change} ${counts}. Fine if intended.`;
+  if ((token === "^" || token === "#") && severity === "error")
+    return `${token} ${change} ${counts}: a dialogue page now has two different portraits, and the second shows as raw text.`;
   if (token === "^")
     return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
   if (token === "{" || token === "}")
