@@ -103,6 +103,20 @@ pub(crate) fn apply(
     let same_root = previous
         .as_ref()
         .filter(|snapshot| snapshot.mods_root_hash == current.mods_root_hash);
+    // A version 1 baseline does not record owners, so a skipped component's
+    // entries cannot be told apart. Keep the old rule for that one scan: no
+    // counts and the baseline stays as it is.
+    if !skipped.is_empty()
+        && same_root.is_some_and(|snapshot| {
+            snapshot
+                .entries
+                .values()
+                .any(|entry| entry.owner().is_none())
+        })
+    {
+        result.source_deltas = None;
+        return Ok(());
+    }
     let deltas = same_root
         .map(|snapshot| compare(snapshot, &current, &current_identities, &skipped))
         .unwrap_or_default();
@@ -443,6 +457,29 @@ mod tests {
         let rescanned = scan_with_snapshot(&mods, &data, "de");
         assert!(rescanned.warnings.is_empty(), "{:?}", rescanned.warnings);
         assert_eq!(rescanned.source_deltas.unwrap().sources_changed, 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_version_one_baseline_with_a_skipped_component_stays_untouched() {
+        let root = crate::test_support::temp_dir("scan-snapshot-v1-skip");
+        let data = root.join("data");
+        let mods = fixture(&root, "Example.Mod", r#"{"line":"Before"}"#, "{}");
+        scan_with_snapshot(&mods, &data, "de");
+        let path = snapshot_path(&data);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        value["version"] = 1.into();
+        for entry in value["entries"].as_object_mut().unwrap().values_mut() {
+            *entry = entry["source"].clone();
+        }
+        std::fs::write(&path, value.to_string()).unwrap();
+        let legacy = std::fs::read(&path).unwrap();
+
+        write(&mods.join("Example/i18n/default.json"), r#"{"broken":"#);
+        let skipped = scan_with_snapshot(&mods, &data, "de");
+        assert_eq!(skipped.source_deltas, None);
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
         std::fs::remove_dir_all(root).ok();
     }
 

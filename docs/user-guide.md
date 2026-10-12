@@ -20,10 +20,10 @@ Mods that do not use standard SMAPI i18n files cannot be translated here.
 The app opens directly in the translation workspace. Select a mod or component
 to work on its strings. Use **Scan** after installing
 or updating mods. After two complete scans, the app can report English strings
-that were added, changed, or removed. A scan with an attention-requiring skipped
-component keeps the last complete baseline; comparison counts are unavailable
-until a complete scan succeeds. Expected community-language-pack exclusions
-do not make a scan incomplete.
+that were added, changed, or removed. A component the scan had to skip is left
+out of these counts and keeps its last baseline until it scans cleanly again;
+the other components are still compared. Expected community-language-pack
+exclusions do not count as skipped.
 
 ## Edit and save
 
