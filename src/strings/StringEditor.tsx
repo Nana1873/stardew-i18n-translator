@@ -1301,12 +1301,16 @@ export function StringEditor({
           </div>
 
           {sourceSaveBlocked && (
-            <div className="translator-flow-callout is-warning" role="alert">
+            <div
+              className="translator-flow-callout is-warning translator-source-conflict"
+              role="alert"
+            >
               <span>
-                English source changed while you were editing. Your draft is
-                preserved. Review the updated source before saving.
-                <br />
-                Previous source: {acceptedSource}
+                The English text changed while you were editing. Your draft is
+                kept; check the new English text, then save.
+                <span className="translator-source-conflict-old">
+                  Before: <code>{acceptedSource}</code>
+                </span>
               </span>
               <button
                 className="translator-button translator-button-quiet"

@@ -338,7 +338,7 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   expect(screen.getByRole("textbox", { name: "Translation" })).toBe(input);
   expect(input).toHaveValue("Manual draft");
   expect(input).toHaveFocus();
-  expect(screen.getByRole("alert")).toHaveTextContent("English source changed");
+  expect(screen.getByRole("alert")).toHaveTextContent("The English text changed");
   expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
   fireEvent.keyDown(input, { key: "ArrowRight", altKey: true });

@@ -224,7 +224,7 @@ export async function editorRefreshCases(h) {
             await (
               await h.element(h.css('.translator-editor [role="alert"]'))
             ).getText()
-          ).includes("English source changed"),
+          ).includes("The English text changed"),
       );
       assert.equal(
         await h

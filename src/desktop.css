@@ -1768,3 +1768,23 @@
   margin: 0;
   padding-left: 16px;
 }
+
+/* Source changed while editing: text left, action button right. */
+#stardew-i18n-translator .translator-source-conflict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+#stardew-i18n-translator .translator-source-conflict > button {
+  flex-shrink: 0;
+}
+#stardew-i18n-translator .translator-source-conflict-old {
+  display: block;
+  margin-top: 4px;
+  color: var(--translator-muted);
+}
+#stardew-i18n-translator .translator-source-conflict-old code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
