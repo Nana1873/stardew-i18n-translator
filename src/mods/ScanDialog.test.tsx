@@ -389,6 +389,38 @@ describe("ScanDialog", () => {
     }
   });
 
+  it("names an i18n folder without a manifest instead of calling it a language pack", () => {
+    render(
+      <ScanDialog
+        scanning={false}
+        result={{
+          ...RESULT,
+          warnings: [],
+          skippedComponents: [
+            {
+              packageId: null,
+              componentUniqueId: null,
+              componentName: null,
+              relativeLocation: "Loose/i18n",
+              reason:
+                "No manifest.json in this folder or a parent folder, so SMAPI does not load these translations.",
+              requiresAttention: false,
+              restOfPackageLoaded: false,
+            },
+          ],
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/1 folder without a manifest.json was ignored/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/community language pack/)).toBeNull();
+    expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
+  });
+
   it("shows an expected language-pack exclusion as information, not a skipped problem", () => {
     render(
       <ScanDialog

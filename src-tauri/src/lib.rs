@@ -1746,18 +1746,25 @@ fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
         return None;
     }
     let detail_count = failures.len().min(MAX_DETAILS);
-    let details = failures
+    // Strings that failed for the same reason (an unreachable server, for
+    // example) share one cause instead of repeating it for every string.
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for failure in failures.iter().take(detail_count) {
+        let identity = format!(
+            "{} / {} / {}",
+            bounded_single_line(&failure.identity.mod_unique_id, 80),
+            bounded_single_line(&failure.identity.relative_dir, 80),
+            bounded_single_line(&failure.identity.key, 120)
+        );
+        let cause = bounded_single_line(&failure.cause, 320);
+        match groups.iter_mut().find(|(known, _)| *known == cause) {
+            Some((_, identities)) => identities.push(identity),
+            None => groups.push((cause, vec![identity])),
+        }
+    }
+    let details = groups
         .iter()
-        .take(detail_count)
-        .map(|failure| {
-            let identity = format!(
-                "{} / {} / {}",
-                bounded_single_line(&failure.identity.mod_unique_id, 80),
-                bounded_single_line(&failure.identity.relative_dir, 80),
-                bounded_single_line(&failure.identity.key, 120)
-            );
-            format!("{}: {}", identity, bounded_single_line(&failure.cause, 320))
-        })
+        .map(|(cause, identities)| format!("{} ({})", cause, identities.join(", ")))
         .collect::<Vec<_>>()
         .join("; ");
     let omitted = failures.len().saturating_sub(detail_count);
@@ -3841,6 +3848,7 @@ mod ai_run_contract_tests {
             })
             .collect::<Vec<_>>();
         let bounded = local_ai_failure_summary(&many_failures).unwrap();
+        assert_eq!(bounded.matches(&"failed".repeat(50)).count(), 1);
         assert!(bounded.contains("10 selected strings failed"));
         assert!(bounded.contains("2 additional failure(s) omitted"));
         assert!(bounded.len() < 4_000);
