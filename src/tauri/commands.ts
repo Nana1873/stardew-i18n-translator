@@ -962,8 +962,33 @@ export function cancelAiRun(runId: string): Promise<boolean> {
   return invoke<boolean>("cancel_ai_run", { runId });
 }
 
+/** Event the app listens to so a failed fire-and-forget action is shown. */
+export const NOTIFY_EVENT = "translator-notify";
+
+export interface NotifyDetail {
+  message: string;
+  tone: "info" | "success" | "warning" | "error";
+}
+
+/** Opening a link or folder is fire-and-forget at every call site; report a
+ * failure to the app instead of losing it silently. */
+function reportOpenFailure(target: string) {
+  return (error: unknown): void => {
+    window.dispatchEvent(
+      new CustomEvent<NotifyDetail>(NOTIFY_EVENT, {
+        detail: {
+          message: `Could not open ${target}: ${String(error)}`,
+          tone: "error",
+        },
+      }),
+    );
+  };
+}
+
 export function openUrl(url: string): Promise<void> {
-  return invoke<void>("open_url", { url });
+  return Promise.resolve(invoke<void>("open_url", { url })).catch(
+    reportOpenFailure("the link"),
+  );
 }
 
 /**
@@ -983,16 +1008,22 @@ export function logFrontendError(context: string, message: string): void {
  * user can attach the current log file to a GitHub bug report.
  */
 export function openLogsDir(): Promise<void> {
-  return invoke<void>("open_logs_dir");
+  return Promise.resolve(invoke<void>("open_logs_dir")).catch(
+    reportOpenFailure("the logs folder"),
+  );
 }
 
 /** Open a mod's folder in the OS file manager. */
 export function openModFolder(path: string): Promise<void> {
-  return invoke<void>("open_mod_folder", { path });
+  return Promise.resolve(invoke<void>("open_mod_folder", { path })).catch(
+    reportOpenFailure("the mod folder"),
+  );
 }
 
 export function openFolder(path: string): Promise<void> {
-  return invoke<void>("open_folder", { path });
+  return Promise.resolve(invoke<void>("open_folder", { path })).catch(
+    reportOpenFailure("the folder"),
+  );
 }
 
 export function loadSettings(): Promise<AppSettings> {

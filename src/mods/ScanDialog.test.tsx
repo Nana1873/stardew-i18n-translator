@@ -140,7 +140,7 @@ describe("ScanDialog", () => {
       screen.getByRole("button", { name: "Show changed strings (1)" }),
     ).toBeEnabled();
     expect(document.querySelector(".translator-sr-only")).toHaveTextContent(
-      "Scan complete. 1 mod and 1 i18n file found.",
+      "Scan complete. 1 mod and 1 translation file found. Everything is ready.",
     );
   });
 
@@ -153,7 +153,7 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1 item needs a look/)[0]).toBeInTheDocument();
 
     rerender(
       <ScanDialog
@@ -163,7 +163,7 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1 item needs a look/)[0]).toBeInTheDocument();
     // Without a comparison the line says when changes are listed again.
     expect(
       screen.getByText(
@@ -375,7 +375,9 @@ describe("ScanDialog", () => {
     );
 
     expect(
-      screen.getByText(/1 i18n folder that SMAPI does not load was ignored/),
+      screen.getAllByText(
+        /1 i18n folder that SMAPI does not load was ignored/,
+      )[0],
     ).toBeInTheDocument();
     expect(screen.queryByText(/community language pack/)).toBeNull();
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
@@ -448,11 +450,11 @@ describe("ScanDialog", () => {
     );
 
     expect(
-      screen.getByText(/1 community language pack was ignored/),
+      screen.getAllByText(/1 community language pack was ignored/)[0],
     ).toBeInTheDocument();
     expect(screen.getByText("Everything is ready")).toBeInTheDocument();
     const line = screen
-      .getByText(/1 community language pack was ignored/)
+      .getAllByText(/1 community language pack was ignored/)[0]
       .closest("details");
     expect(line).not.toHaveAttribute("open");
     expect(screen.getAllByText("Stardew Valley - THAI")).toHaveLength(1);

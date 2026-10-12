@@ -180,6 +180,34 @@ export function SettingsDialog({
     llmProvider === "custom" ? null : (LLM_PRESETS[llmProvider] ?? null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [discardPrompt, setDiscardPrompt] = useState(false);
+  // Everything the user can edit here, to ask before closing with changes.
+  const editable = JSON.stringify([
+    stardewPath,
+    modsPath,
+    targetLang,
+    shortcuts,
+    diagnosticLogging,
+    llmProvider,
+    llmBaseUrl,
+    llmModel,
+    llmTemperature,
+    cloudReasoning,
+    cloudQualityReview,
+    cloudModel,
+    cloudParallelBatches,
+    preferredEngine,
+  ]);
+  const initialEditable = useRef(editable);
+  const hasChanges = editable !== initialEditable.current;
+
+  function requestClose() {
+    if (hasChanges) {
+      setDiscardPrompt(true);
+      return;
+    }
+    onClose();
+  }
   const llmRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
@@ -265,7 +293,7 @@ export function SettingsDialog({
 
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
-    onEscape: onClose,
+    onEscape: () => (discardPrompt ? setDiscardPrompt(false) : requestClose()),
     escapeDisabled: saving || folderPicking !== null,
     initialFocusSelector: '[role="tab"][aria-selected="true"]',
   });
@@ -628,7 +656,7 @@ export function SettingsDialog({
             className="translator-icon-button"
             type="button"
             aria-label="Close settings"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={saving || folderPicking !== null}
           >
             <X aria-hidden="true" />
@@ -1305,16 +1333,40 @@ export function SettingsDialog({
                 {saveError}
               </span>
             )}
+            {discardPrompt && !saveError && (
+              <span className="translator-settings-discard" role="alert">
+                You have unsaved changes.
+              </span>
+            )}
           </span>
           <div className="translator-settings-actions">
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={onClose}
-              disabled={saving || folderPicking !== null}
-            >
-              Cancel
-            </button>
+            {discardPrompt ? (
+              <>
+                <button
+                  className="translator-button translator-button-quiet"
+                  type="button"
+                  onClick={onClose}
+                >
+                  Discard changes
+                </button>
+                <button
+                  className="translator-button translator-button-quiet"
+                  type="button"
+                  onClick={() => setDiscardPrompt(false)}
+                >
+                  Keep editing
+                </button>
+              </>
+            ) : (
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                onClick={requestClose}
+                disabled={saving || folderPicking !== null}
+              >
+                Cancel
+              </button>
+            )}
             <button
               className="translator-button translator-button-primary"
               type="button"

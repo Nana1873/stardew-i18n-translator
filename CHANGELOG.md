@@ -10,6 +10,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- The mod list header shows one "Needs attention" count that matches the scan
+  result, instead of separate skipped and warning counters.
 - The scan result is calmer: one sentence says whether everything is ready,
   changes since the last scan are one line, and each problem is explained in
   plain words with the technical details folded away. Expected exclusions such
@@ -50,6 +52,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A single-string AI translation in the editor can be cancelled, and closing
+  the editor (or pressing Esc) during it cancels it instead of being blocked.
+- Settings and a re-run of setup ask before discarding unsaved changes.
+- Opening a folder, the logs, or a link now reports a failure instead of doing
+  nothing.
+- Short info toasts such as "Copied" no longer hide the latest result, and
+  clearing a selection no longer shows a toast that could contradict a new
+  selection.
 - An `i18n` folder deeper inside a mod without its own `manifest.json` is no
   longer offered for translation, because SMAPI never loads it; Scan lists it
   as information. Mods whose components each have a manifest, such as

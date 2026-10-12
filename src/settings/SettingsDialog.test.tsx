@@ -1774,4 +1774,40 @@ describe("SettingsDialog", () => {
     document.body.removeEventListener("keydown", bubbled);
     trigger.remove();
   });
+
+  it("asks before discarding unsaved changes and closes directly without changes", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={vi.fn()}
+        onClose={onClose}
+        onReRunSetup={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledOnce();
+
+    onClose.mockClear();
+    rerender(<></>);
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={vi.fn()}
+        onClose={onClose}
+        onReRunSetup={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText("You have unsaved changes.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByLabelText("Target language")).toHaveValue("fr");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

@@ -66,9 +66,25 @@ export function SetupWizard({
   const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
   const autoBuildKey = useRef<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [discardPrompt, setDiscardPrompt] = useState(false);
+  const hasChanges =
+    stardewPath !== (initial?.stardewPath ?? "") ||
+    modsPath !== (initial?.modsPath ?? "") ||
+    targetLang !== (initial?.targetLang ?? "");
+
+  /** Re-running setup from Settings: ask before dropping changed choices. */
+  function requestCancel() {
+    if (!onCancel) return;
+    if (hasChanges) {
+      setDiscardPrompt(true);
+      return;
+    }
+    onCancel();
+  }
+
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
-    onEscape: onCancel ?? (() => {}),
+    onEscape: () => (discardPrompt ? setDiscardPrompt(false) : requestCancel()),
     escapeDisabled: !onCancel || busy,
   });
 
@@ -562,16 +578,37 @@ export function SetupWizard({
         </div>
 
         <footer className="wizard__footer setup__footer">
-          {onCancel && (
-            <button
-              type="button"
-              className="wizard__cancel"
-              onClick={onCancel}
-              disabled={busy}
-            >
-              Cancel
-            </button>
-          )}
+          {onCancel &&
+            (discardPrompt ? (
+              <>
+                <span className="translator-settings-discard" role="alert">
+                  You have unsaved changes.
+                </span>
+                <button
+                  type="button"
+                  className="wizard__cancel"
+                  onClick={onCancel}
+                >
+                  Discard changes
+                </button>
+                <button
+                  type="button"
+                  className="wizard__cancel"
+                  onClick={() => setDiscardPrompt(false)}
+                >
+                  Keep editing
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="wizard__cancel"
+                onClick={requestCancel}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+            ))}
           <span className="wizard__spacer" />
           {step > 1 && (
             <button
