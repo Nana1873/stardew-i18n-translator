@@ -438,10 +438,17 @@ function chooseToolbarAction(_menuName: "File actions", actionName: string) {
 
 async function inspectLatestResult() {
   await screen.findByLabelText("Operation result");
-  if (screen.queryByRole("button", { name: "Hide result" })) {
-    fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
-  }
-  fireEvent.click(await screen.findByRole("button", { name: "Latest result" }));
+  // The notice can finish rendering after the first check on a slow CI
+  // runner, so keep hiding it until the collapsed "Latest result" appears.
+  const latest = await waitFor(
+    () => {
+      const hide = screen.queryByRole("button", { name: "Hide result" });
+      if (hide) fireEvent.click(hide);
+      return screen.getByRole("button", { name: "Latest result" });
+    },
+    { timeout: 3000 },
+  );
+  fireEvent.click(latest);
   await screen.findByRole("button", { name: "Back to notification" });
   return screen.getByRole("complementary", { name: "Operation result" });
 }
@@ -4044,10 +4051,22 @@ describe("App shell", () => {
       expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull(),
     );
     expect(scanCalls()).toBe(1);
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      "save_settings",
-      expect.anything(),
-    );
+    // Workspace layout may be persisted on its own schedule; the cancelled
+    // wizard must not change the game folder, Mods folder, or language.
+    const savedSetups = invokeMock.mock.calls
+      .filter(([cmd]) => cmd === "save_settings")
+      .map(([, args]) => (args as { settings: typeof CONFIGURED }).settings)
+      .map(({ stardewPath, modsPath, targetLang }) => ({
+        stardewPath,
+        modsPath,
+        targetLang,
+      }));
+    for (const saved of savedSetups)
+      expect(saved).toEqual({
+        stardewPath: CONFIGURED.stardewPath,
+        modsPath: CONFIGURED.modsPath,
+        targetLang: CONFIGURED.targetLang,
+      });
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {

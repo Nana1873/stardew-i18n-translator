@@ -43,10 +43,12 @@ if (
   import.meta.env.MODE === "preview" &&
   !("__TAURI_INTERNALS__" in window)
 ) {
-  void import("./tauri/previewBridge").then(({ installPreviewBridge }) => {
-    installPreviewBridge();
-    render();
-  });
+  void import("./tauri/previewBridge")
+    .then(({ installPreviewBridge }) => installPreviewBridge())
+    .catch((error) =>
+      console.error("[preview] Could not load the browser preview:", error),
+    )
+    .finally(render);
 } else {
   render();
 }
