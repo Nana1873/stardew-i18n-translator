@@ -18,7 +18,6 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - The arguments of a dialogue command that opens a string are protected:
   changed question ids such as `$q 305/306 null#` or a renamed one-time flag
   such as `$1 metHarvey#` are token errors instead of passing silently.
-
 - Token chips in the editor now show their severity: a red circle marks a
   difference that keeps the string English on export, a yellow triangle a
   harmless note. The validation line groups errors before notes and names the
@@ -37,7 +36,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A dialogue page that starts with a he/she switch or a portrait, such as
   `#${He^She}$ is here.` or `#$hSo happy!`, is translatable again; it was
   treated as one protected token, so every translation was an error.
-
+- Existing Chinese translations in `i18n/zh-CN.json` are imported like
+  `pt-BR.json`; export writes `zh.json` and backs up and removes the regional
+  file, so the exported translation is the one SMAPI loads.
+- A split-locale target document with the same name as its source, such as an
+  empty `i18n/de/Events.json` stub, no longer skips the component; only keys
+  that belong to another source document block it.
+- Community language-pack `Strings` files with comments or trailing commas are
+  read for the glossary instead of being ignored.
 - The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
 - Folders whose name starts with a dot (for example `.disabled`) are skipped
   like SMAPI does, so a parked copy of a mod no longer counts as a duplicate
