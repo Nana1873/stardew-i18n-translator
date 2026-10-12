@@ -104,14 +104,16 @@ Validation protects runtime-sensitive SMAPI, Content Patcher, dialogue, mail,
 placeholder, and formatting tokens. Each count difference is an **error** or a
 **warning**, verified against the Stardew 1.6 dialogue, mail, and token parsers:
 
-- Errors break the game: a damaged gender switch (`${` or `}$` missing), a
+- Errors break the game: a damaged gender switch (`${` or `}$` missing, or a
+  switch inside a switch, which the game does not nest), a
   changed `^`, `#`, or `#$b#` page structure, dialogue commands such as `$q`,
   `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
   `%revealtaste`, the arguments of a command that opens the string (such as
   `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), the `_` separators
   and single `*` page breaks inside a `$y '…'` quick response, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
   item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
-  a second portrait command on one dialogue page.
+  a second, different portrait command on one dialogue page (the game removes
+  every copy of the one it applies, so a repeated portrait is harmless).
 - Warnings are cosmetic or legitimate translation choices: portrait changes
   (a missing index falls back to portrait 0), a cleanly removed or reshaped
   gender switch, `@`, and a dropped placeholder or `[ArticleFor]`.
