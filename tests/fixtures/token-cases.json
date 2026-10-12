@@ -880,6 +880,26 @@
       "source": "Hi.",
       "target": "Hallo, %farm.",
       "text": "%farm is not in the English text. The game puts the farm's name here. Fine if intended."
+    },
+    {
+      "source": "Hi.#$b#Bye.",
+      "target": "你好。＃＄b＃再见。",
+      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+    },
+    {
+      "source": "Thanks @!",
+      "target": "谢谢＠！",
+      "text": "The player name @ is missing from the translation. Fine if intended. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+    },
+    {
+      "source": "Welcome to [FarmName].",
+      "target": "欢迎来到［FarmName］。",
+      "text": "[FarmName] is missing from the translation. The game would not insert this value or item. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+    },
+    {
+      "source": "Fine.",
+      "target": "好＄。",
+      "text": ""
     }
   ]
 }

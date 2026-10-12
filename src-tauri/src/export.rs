@@ -572,7 +572,7 @@ fn prepare_mod(
             result.skipped.push(SkippedKey {
                 relative_dir: file.relative_dir.clone(),
                 key: row.key.clone(),
-                reason: tokens::explain_differences(&differences),
+                reason: tokens::explain_differences(&differences, &row.target),
             });
         }
         prepared_rows.push((file, rows));

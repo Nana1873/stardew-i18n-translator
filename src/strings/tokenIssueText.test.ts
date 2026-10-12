@@ -78,28 +78,38 @@ describe("describeTokenIssue", () => {
     ]);
   });
 
-  it("points out full-width look-alikes only next to an error", () => {
+  it("points out full-width look-alikes next to any token difference", () => {
+    const hint =
+      "The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ].";
     const fullWidth = "我的＄｛老公＾老婆｝＄";
     expect(
       describeTokenIssue(
         [{ token: "#", sourceCount: 1, targetCount: 0, severity: "error" }],
         fullWidth,
-      ).map((item) => item.message),
-    ).toContain(
-      "The text contains full-width characters such as ＄｛｝＾. Tokens must use the normal characters $ { } ^.",
-    );
+      ).at(-1),
+    ).toEqual({ severity: "error", kind: "added", message: hint });
+    // Next to a warning the hint is a warning too; it never adds an error.
     expect(
       describeTokenIssue(
-        [
-          {
-            token: "${^}$",
-            sourceCount: 1,
-            targetCount: 0,
-            severity: "warning",
-          },
-        ],
-        fullWidth,
-      ),
-    ).toHaveLength(1);
+        [{ token: "@", sourceCount: 1, targetCount: 0, severity: "warning" }],
+        "你好＠",
+      ).at(-1),
+    ).toEqual({ severity: "warning", kind: "added", message: hint });
+    for (const lookalike of ["＃", "％", "［", "］"])
+      expect(
+        describeTokenIssue(
+          [
+            {
+              token: "%spouse",
+              sourceCount: 1,
+              targetCount: 0,
+              severity: "warning",
+            },
+          ],
+          `你好${lookalike}`,
+        ).map((item) => item.message),
+      ).toContain(hint);
+    // Without a token difference there is nothing to explain.
+    expect(describeTokenIssue([], fullWidth)).toEqual([]);
   });
 });

@@ -12,8 +12,11 @@ export interface TokenDifference {
   severity: TokenSeverity;
 }
 
-/** Full-width look-alikes an LLM may write instead of ASCII token syntax. */
-const FULL_WIDTH_LOOKALIKES = /[＄｛｝＾]/u;
+/** Full-width look-alikes an LLM or a CJK keyboard may write instead of
+ * ASCII token syntax. Mirrors Rust `FULL_WIDTH_LOOKALIKES`. */
+const FULL_WIDTH_LOOKALIKES = /[＄｛｝＾＃＠％［］]/u;
+const FULL_WIDTH_HINT =
+  "The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ].";
 
 export interface TokenIssueMessage {
   severity: TokenSeverity;
@@ -205,15 +208,15 @@ export function describeTokenIssue(
     });
   }
 
-  if (
-    messages.some((item) => item.severity === "error") &&
-    FULL_WIDTH_LOOKALIKES.test(translation)
-  ) {
+  // A look-alike explains a token difference but never adds one, so the hint
+  // takes the strongest severity already present.
+  if (messages.length > 0 && FULL_WIDTH_LOOKALIKES.test(translation)) {
     messages.push({
-      severity: "error",
+      severity: messages.some((item) => item.severity === "error")
+        ? "error"
+        : "warning",
       kind: "added",
-      message:
-        "The text contains full-width characters such as ＄｛｝＾. Tokens must use the normal characters $ { } ^.",
+      message: FULL_WIDTH_HINT,
     });
   }
   return messages;

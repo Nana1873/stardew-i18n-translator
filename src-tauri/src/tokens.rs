@@ -186,11 +186,17 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
+/// Full-width look-alikes an LLM or a CJK keyboard may write instead of ASCII
+/// token syntax (mirrors TS `FULL_WIDTH_LOOKALIKES`).
+const FULL_WIDTH_LOOKALIKES: [char; 9] = ['＄', '｛', '｝', '＾', '＃', '＠', '％', '［', '］'];
+const FULL_WIDTH_HINT: &str = "The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ].";
+
 /// A plain-language explanation of game-breaking differences for export and
 /// release results. Gender-switch damage is described as one structural
 /// problem instead of its raw `${`, `}$`, and `^` counts (mirrors the TS
-/// `describeTokenIssue`).
-pub fn explain_differences(differences: &[TokenDifference]) -> String {
+/// `describeTokenIssue`). `translation` is the target text the differences
+/// come from; full-width look-alikes in it get one extra hint.
+pub fn explain_differences(differences: &[TokenDifference], translation: &str) -> String {
     let delta = |token: &str| {
         differences
             .iter()
@@ -226,6 +232,14 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
             continue;
         }
         messages.push(difference_message(difference));
+    }
+    // A look-alike explains a token difference but never adds one.
+    if !messages.is_empty()
+        && translation
+            .chars()
+            .any(|c| FULL_WIDTH_LOOKALIKES.contains(&c))
+    {
+        messages.push(FULL_WIDTH_HINT.to_string());
     }
     messages.join(" ")
 }
@@ -1677,7 +1691,7 @@ mod tests {
                 case["target"].as_str().unwrap(),
             );
             assert_eq!(
-                explain_differences(&token_differences(source, target)),
+                explain_differences(&token_differences(source, target), target),
                 case["text"].as_str().unwrap(),
                 "explain({target:?})"
             );
