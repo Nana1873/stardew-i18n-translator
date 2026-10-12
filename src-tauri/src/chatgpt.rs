@@ -124,7 +124,13 @@ pub async fn run_prompt(
             "reasoning":{"effort":reasoning},
             "text":{"format":{"type":"json_schema","name":"translator_output","strict":true,"schema":prompt.schema}},
             "store":false,"stream":true,
-        })).send().await.map_err(|_| ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into()))?;
+        })).send().await.map_err(|error| {
+            if error.is_timeout() {
+                timeout_failure()
+            } else {
+                ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into())
+            }
+        })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let bytes = chatgpt_auth::read_bounded(response).await?;
@@ -147,6 +153,15 @@ pub async fn run_prompt(
         }
     }
 }
+/// A request that hit the five-minute ceiling is too large for one attempt,
+/// not a network problem: report it as such and let the batch be split.
+pub(crate) fn timeout_failure() -> ProviderFailure {
+    ProviderFailure::InvalidResponse(
+        "OpenAI did not finish this batch within five minutes; it is split into smaller batches."
+            .into(),
+    )
+}
+
 #[path = "cloud_translation.rs"]
 mod cloud_translation;
 pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};

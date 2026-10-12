@@ -25,6 +25,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A ChatGPT refusal for one string no longer ends the whole run. The batch is
+  split until the refused string is isolated; every other string is still
+  translated and drafts already received are kept.
+- A ChatGPT batch that reaches the five-minute limit is reported as too large
+  and split into smaller batches instead of being reported as a network error.
+
 - The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
 - Folders whose name starts with a dot (for example `.disabled`) are skipped
   like SMAPI does, so a parked copy of a mod no longer counts as a duplicate
