@@ -45,6 +45,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - One unreadable document in a split `i18n/<lang>/` folder no longer skips
   every source document of the component. It blocks only the document of the
   same name; any other is reported once as a scan warning.
+- Exporting a mod again without changes leaves target files that already hold
+  the exported content untouched, so their earlier `.bak` backup and file
+  date are kept. A failed export no longer reports an incomplete rollback for
+  files whose content never changed.
+- Importing a batch no longer replaces a saved single-space translation, which
+  deliberately hides visible text.
 - **Export ZIP for all mods** no longer fails completely when the scan had to
   skip a component, such as another mod with a broken `default.json`. A
   package with a skipped part is left out as a whole and named in the preview;
