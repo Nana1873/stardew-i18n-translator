@@ -463,18 +463,28 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
             entries,
         });
     }
+    Err(game_files_problem(
+        &problems,
+        " This language may not be available in this game version, or the game files are damaged.",
+    ))
+}
+
+/// The game's `Content/Strings` files gave no usable names. Names the first
+/// recorded problem (file name only) and how many more there were; `cause`
+/// is a sentence on the likely reason, with a leading space.
+fn game_files_problem(problems: &[(String, String)], cause: &str) -> String {
     let Some((_, first)) = problems.first() else {
-        return Err("No official names were found in the game's Content/Strings files. Check that the Stardew Valley folder in Settings is correct, then build the glossary again.".to_string());
+        return "No official names were found in the game's Content/Strings files. Check that the Stardew Valley folder in Settings is correct, then build the glossary again.".to_string();
     };
     let more = match problems.len() - 1 {
         0 => String::new(),
         1 => " One more file has a problem too.".to_string(),
         n => format!(" {n} more files have problems too."),
     };
-    Err(format!(
-        "The game's text files could not be read ({}).{more} This language may not be available in this game version, or the game files are damaged. Verify the game files in Steam or GOG, then build the glossary again.",
+    format!(
+        "The game's text files could not be read ({}).{more}{cause} Verify the game files in Steam or GOG, then build the glossary again.",
         first.trim_end_matches('.')
-    ))
+    )
 }
 
 /// Build a glossary for a game-unsupported `target_lang` from an installed
@@ -515,6 +525,10 @@ pub fn build_from_pack(
             StringAssetFormat::Xnb => xnb::read_string_dictionary(&path).ok(),
         }
     };
+    // Problems with the game's English files, and whether any could be read:
+    // without a readable English base the pack is not the cause.
+    let problems = std::cell::RefCell::new(Vec::<(String, String)>::new());
+    let english_read = std::cell::Cell::new(false);
     let entries = build_entries(
         &|asset| {
             let file = format!("{asset}.xnb");
@@ -522,15 +536,26 @@ pub fn build_from_pack(
             if !path.is_file() {
                 return None;
             }
-            xnb::read_string_dictionary(&path)
+            let english = xnb::read_string_dictionary(&path)
                 .inspect_err(|error| {
-                    log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {file}: {error}")
+                    log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {file}: {error}");
+                    problems
+                        .borrow_mut()
+                        .push((asset.to_string(), format!("{file}: {error}")));
                 })
-                .ok()
+                .ok();
+            english_read.set(english_read.get() || english.is_some());
+            english
         },
         &target_map,
         target_lang,
     );
+    if entries.is_empty() && !english_read.get() {
+        return Err(game_files_problem(
+            &problems.into_inner(),
+            " The English names come from these files, so the language pack cannot be used without them.",
+        ));
+    }
     if entries.is_empty() {
         return Err(format!(
             "No official terms could be extracted from the language pack \"{pack_name}\"."
@@ -1463,6 +1488,49 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("Empty Pack"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn build_from_pack_names_unreadable_game_files_instead_of_the_pack() {
+        let root = crate::test_support::temp_dir("glossary-pack-broken-game");
+        let english = root.join("Content").join("Strings");
+        let pack = root.join("pack").join("Strings");
+        let mut lz4 = test_xnb_dictionary(&[("24", "Parsnip")]);
+        lz4[5] |= 0x40;
+        write_bytes(&english.join("Objects.xnb"), &lz4);
+        write(&pack.join("Objects.json"), r#"{ "24": "พาร์สนิป" }"#);
+
+        let err = build_from_pack(
+            &english,
+            &root.join("pack"),
+            &pack,
+            StringAssetFormat::Json,
+            "th",
+            "Thai Pack",
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "The game's text files could not be read (Objects.xnb: LZ4-compressed XNB files are not supported). The English names come from these files, so the language pack cannot be used without them. Verify the game files in Steam or GOG, then build the glossary again."
+        );
+
+        // No English file at all: the game folder is named, not the pack.
+        std::fs::remove_file(english.join("Objects.xnb")).unwrap();
+        let err = build_from_pack(
+            &english,
+            &root.join("pack"),
+            &pack,
+            StringAssetFormat::Json,
+            "th",
+            "Thai Pack",
+        )
+        .unwrap_err();
+        assert!(
+            err.starts_with("No official names were found in the game's Content/Strings files."),
+            "{err}"
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

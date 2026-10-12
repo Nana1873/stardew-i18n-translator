@@ -890,20 +890,23 @@ pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
 }
 
 /// A standalone comment that is not a section title: a commented-out entry
-/// (`//"OldGreeting": "Hi",`) or a working note (`// TODO: …`). The current
-/// section continues past it.
+/// (`//"OldGreeting": "Hi",`, a quoted key followed by `:`) or a working note
+/// whose marker stands alone or before a colon (`// TODO`, `// NOTE: …`).
+/// Headings such as `// "Festival" lines` or `// Note on festivals` stay
+/// sections. The current section continues past a skipped line.
 fn is_note_or_disabled_line(comment: &str) -> bool {
     let text = comment.trim();
-    if text.starts_with('"') || text.contains("\":") {
-        return true;
+    if let Some(rest) = text.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            if rest[end + 1..].trim_start().starts_with(':') {
+                return true;
+            }
+        }
     }
     ["TODO", "FIXME", "XXX", "NOTE"].iter().any(|marker| {
         text.get(..marker.len())
             .is_some_and(|start| start.eq_ignore_ascii_case(marker))
-            && !text[marker.len()..]
-                .chars()
-                .next()
-                .is_some_and(char::is_alphanumeric)
+            && matches!(text[marker.len()..].chars().next(), None | Some(':'))
     })
 }
 
@@ -1265,9 +1268,13 @@ fn read_target_object_within_root(
 /// the file itself.
 fn canonical_root(allowed_root: &Path) -> Result<PathBuf, String> {
     std::fs::canonicalize(allowed_root).map_err(|error| {
+        let name = allowed_root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         format!(
-            "Could not validate Mods folder {}: {error}",
-            allowed_root.display()
+            "Could not open the folder \"{name}\" ({}). Check that it exists and is not locked by another program, then scan again.",
+            plain_io_error(&error)
         )
     })
 }
@@ -3067,7 +3074,7 @@ mod tests {
   // "Removed" : "Gone",
   // TODO: reword this
   "bye": "Bye",
-  // fixme later
+  // fixme: later
   // Note: keep short
   // XXX
   "later": "Later",
@@ -3093,6 +3100,28 @@ mod tests {
             Some("ÄÖÜ title")
         );
         assert!(!sections.contains_key(&folded_key("OldGreeting")));
+    }
+
+    #[test]
+    fn only_quoted_keys_and_bare_markers_are_skipped_as_headings() {
+        for skipped in [
+            r#""OldGreeting": "Hi","#,
+            r#" "Removed" : "Gone""#,
+            "TODO",
+            "TODO: reword",
+            "NOTE:",
+        ] {
+            assert!(is_note_or_disabled_line(skipped), "{skipped}");
+        }
+        for heading in [
+            r#" "Festival" lines"#,
+            "Todo list",
+            "Note on festivals",
+            "Notebook entries",
+            "Greetings",
+        ] {
+            assert!(!is_note_or_disabled_line(heading), "{heading}");
+        }
     }
 
     #[test]
@@ -3651,6 +3680,17 @@ mod split_locale_tests {
         );
         let other = std::io::Error::other("The disk is busy. (os error 170)");
         assert_eq!(plain_io_error(&other), "The disk is busy");
+    }
+
+    #[test]
+    fn unresolvable_read_boundary_names_only_the_folder() {
+        let root = crate::test_support::temp_dir("canonical-root-missing");
+        let error = canonical_root(&root.join("Gone").join("i18n")).unwrap_err();
+        assert_eq!(
+            error,
+            "Could not open the folder \"i18n\" (it no longer exists). Check that it exists and is not locked by another program, then scan again."
+        );
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
