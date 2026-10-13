@@ -83,7 +83,7 @@ Changed, Review, Done, or All leaves the Issues view. Open an affected string to
 inspect the source and target. Hover or focus an icon to see the finding in
 plain language and its effect on export.
 
-**Open Review** after an export shows the **Needs review** filter, which lists
+**Check translations** in an export result shows the **Needs review** filter, which lists
 Review and Changed strings together because both should be checked before
 release.
 
@@ -202,7 +202,9 @@ Strings with unresolved token errors are left out, so the game shows their
 English text, until they are fixed or an intentional mismatch is accepted.
 
 Export writes `i18n/<language>.json` files directly inside the selected installed
-mods. Use a translation ZIP to manage the translation as a separate mod manager
+mods. With **All mods**, JSON export writes every component the scan could
+load, even when it had to skip another component of the same package; the
+all-mods ZIP leaves such a package out instead. Use a translation ZIP to manage the translation as a separate mod manager
 entry. Existing targets receive a `.bak` backup, for example `de.json.bak`.
 Export replaces these
 targets rather than appending to them: target-only keys without an English

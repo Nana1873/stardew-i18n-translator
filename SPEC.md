@@ -181,7 +181,10 @@ Export is explicit and applies to the current mod or all scanned mods. One
 **Files… > Export…** dialog asks for the scope (**This mod** or **All mods**)
 and the output (**ZIP** or **JSON** into the Mods folder), then shows the
 matching preview. It opens on This mod + ZIP (All mods without a selected
-mod) and keeps the last choice for the session. JSON export:
+mod) and keeps the last choice for the session. All mods JSON export works per
+component: it writes every component the scan loaded, even when the scan skipped
+another component of the same package, while the all-mods ZIP leaves a package
+with a skipped component out. JSON export:
 
 - Omit empty targets and strings with unaccepted token errors so SMAPI falls
   back to `default.json`. Non-empty Done, Review, and Changed values are
