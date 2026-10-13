@@ -110,6 +110,8 @@ import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { TranslationZipDialog } from "./release/TranslationZipDialog";
 import {
   ExportChooser,
+  openingExportChoice,
+  rememberedExportChoice,
   resetExportDialogSession,
   type ExportChoice,
 } from "./export/ExportChooser";
@@ -1922,7 +1924,11 @@ export function App() {
       choice.scope === "mod" && !selectedMod
         ? { ...choice, scope: "all" }
         : choice;
-    lastExportChoice.current = effective;
+    lastExportChoice.current = rememberedExportChoice(
+      lastExportChoice.current,
+      effective,
+      Boolean(selectedMod),
+    );
     setExportChoice(effective);
     if (effective.output === "zip") {
       setExportConfirm(null);
@@ -1933,12 +1939,10 @@ export function App() {
   }
 
   function openExportChooser() {
-    const last = lastExportChoice.current;
     resetExportDialogSession();
-    showExportChoice({
-      scope: selectedMod ? (last?.scope ?? "mod") : "all",
-      output: last?.output ?? "zip",
-    });
+    showExportChoice(
+      openingExportChoice(lastExportChoice.current, Boolean(selectedMod)),
+    );
   }
 
   function inspectResultProblem(problem: ResultProblem) {
