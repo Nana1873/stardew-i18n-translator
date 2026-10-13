@@ -454,7 +454,7 @@ fn file_name_is(path: &Path, expected: &str) -> bool {
 
 /// A path relative to the Mods folder (or only its last three parts), so the
 /// message and the Activity log do not carry the user's folder layout.
-fn shown_path(path: &Path, mods_root: &Path) -> String {
+pub(crate) fn shown_path(path: &Path, mods_root: &Path) -> String {
     path.strip_prefix(mods_root)
         .map(|relative| format!("Mods/{}", relative.display()))
         .unwrap_or_else(|_| {
