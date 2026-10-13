@@ -813,8 +813,9 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
     Ok(prepared)
 }
 
-/// The regional file (`i18n/de-DE.json`) beside a packaged flat target in the
-/// original mod, if any. Split document names have none.
+/// The regional file in the original mod that the game prefers over a packaged
+/// target, if any: `i18n/de-DE.json` beside a flat target, or the same document
+/// in `i18n/de-DE/` for a document in `i18n/de/`.
 fn original_regional_file(target_path: &str) -> Option<PathBuf> {
     scanner::regional_target_variant(Path::new(target_path)).filter(|path| path.is_file())
 }
@@ -834,8 +835,20 @@ fn regional_file_hint(regional: &[PathBuf], mods_path: &Path, target_lang: &str)
     } else {
         (format!("{} and {last}", rest.join(", ")), "them")
     };
+    // Documents in a regional language folder (`i18n/de-DE/Dialogue.json`)
+    // win over the `de/` documents in the ZIP, not over a `de.json`.
+    let all_flat = regional.iter().all(|path| {
+        path.parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
+    });
+    let preferred_over = if all_flat {
+        format!("{target_lang}.json")
+    } else {
+        format!("the {target_lang} translation in this ZIP")
+    };
     Some(format!(
-        "The original mod has its own {names}, which the game prefers over {target_lang}.json. \
+        "The original mod has its own {names}, which the game prefers over {preferred_over}. \
          Tell players to delete {pronoun} after installing this ZIP, for example on your mod page."
     ))
 }
@@ -2104,6 +2117,30 @@ mod tests {
         assert!(
             regional.is_file(),
             "the ZIP never removes the original file"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn split_targets_hint_at_the_regional_language_folder_document() {
+        let root = crate::test_support::temp_dir("release-zip-split-regional-hint");
+        let mods = root.join("Mods");
+        let i18n = mods.join("Sample/i18n");
+        let regional = i18n.join("de-DE/Dialogue.json");
+        write(&regional, r#"{"hello":"Servus"}"#);
+        let target = i18n.join("de/Dialogue.json");
+        assert_eq!(
+            original_regional_file(&target.display().to_string()),
+            Some(regional.clone())
+        );
+        assert!(
+            original_regional_file(&i18n.join("de/Events.json").display().to_string()).is_none()
+        );
+        assert_eq!(
+            regional_file_hint(&[regional], &mods, "de").unwrap(),
+            "The original mod has its own Mods/Sample/i18n/de-DE/Dialogue.json, which the \
+             game prefers over the de translation in this ZIP. Tell players to delete it after \
+             installing this ZIP, for example on your mod page."
         );
         std::fs::remove_dir_all(root).ok();
     }

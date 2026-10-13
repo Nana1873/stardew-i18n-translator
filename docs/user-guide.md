@@ -13,8 +13,10 @@ in-game use; selecting a language here does not install one.
 The scan reads standard `i18n/default.json` sources and existing target-language
 files. Split locale folders such as `i18n/default/Dialogue.json` and
 `i18n/de/Dialogue.json` are also supported: source keys identify the matching
-target segment, even when filenames differ. Ambiguous or mixed layouts are
-reported rather than guessed. Multi-part packages are grouped in the mod list.
+target segment, even when filenames differ. Ambiguous layouts are reported
+rather than guessed. If an `i18n` folder has both top-level files and language
+folders, the game uses only the top-level files, and so does the app; the scan
+mentions the ignored folders. Multi-part packages are grouped in the mod list.
 Mods that do not use standard SMAPI i18n files cannot be translated here.
 
 The app opens directly in the translation workspace. Select a mod or component
@@ -216,8 +218,12 @@ up and removes it, because the game would read it before `<code>.json`, and the
 result names the removed file. Translation ZIPs never include or remove such a
 file. If the original mod has one, the ZIP preview names it: tell players to
 delete it after installing your ZIP, for example on your mod page, or the game
-keeps showing some of its texts. Split
-document names such as `i18n/de/pt.json` are kept literally.
+keeps showing some of its texts. Language folders work the same way: a
+document in `i18n/de-DE/` is read with the one of the same name in `i18n/de/`,
+and export moves its texts there. Document names inside a language folder,
+such as `i18n/de/pt.json`, are kept literally. If one file of such a pair
+cannot be read, the game skips it and so does the app: the scan names it, and
+export replaces or removes it with a backup.
 
 For a combined translation archive, choose **Files… > Export…** with **All
 mods** and **ZIP**. Its preview includes all scanned components with effective
