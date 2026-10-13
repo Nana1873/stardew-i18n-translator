@@ -75,8 +75,9 @@ those queues before sharing a translation.
 3. Select your Stardew Valley folder, Mods folder, and target language. Let the
    app scan your mods.
 4. Choose a mod in the workspace and double-click a string to edit it.
-5. Check **Review**, **Changed**, and **Issues**, then choose an action from
-   **Files…** to export JSON files or a translation ZIP.
+5. Check **Review**, **Changed**, and **Issues**, then choose **Files… >
+   Export…** to write JSON files into your Mods folder or save a translation
+   ZIP.
 
 **Requirements:** 64-bit Windows and the
 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).

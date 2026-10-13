@@ -1,6 +1,7 @@
 import { ExportConfirmBody } from "./ExportConfirmBody";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
+import { EXPORT_CHOOSER_FOCUS, useStickyExportHeight } from "./ExportChooser";
 
 import type { LeftOutString } from "./ExportOverview";
 
@@ -31,6 +32,11 @@ interface ExportConfirmDialogProps {
   onInspectProblem?: (problem: LeftOutString) => void;
   /** Current-session value only; no history is invented. */
   lastExportLabel?: string | null;
+  /** The Export… choice shown above the preview. */
+  chooser?: ReactNode;
+  /** True while another Export… choice loads: this preview is stale and
+   * its actions wait. */
+  switching?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -53,13 +59,17 @@ export function ExportConfirmDialog({
   blockingValidationAvailable = false,
   onInspectProblem,
   lastExportLabel = null,
+  chooser,
+  switching = false,
   onConfirm,
   onCancel,
 }: ExportConfirmDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
+  useStickyExportHeight(dialogRef, Boolean(chooser));
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
     onEscape: onCancel,
+    initialFocusSelector: chooser ? EXPORT_CHOOSER_FOCUS : undefined,
   });
   return (
     <ExportConfirmBody
@@ -80,6 +90,8 @@ export function ExportConfirmDialog({
       blockingValidationAvailable={blockingValidationAvailable}
       onInspectProblem={onInspectProblem}
       lastExportLabel={lastExportLabel}
+      chooser={chooser}
+      switching={switching}
       onConfirm={onConfirm}
       onCancel={onCancel}
       dialogRef={dialogRef}
