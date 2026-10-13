@@ -117,12 +117,12 @@ describe("CSS custom properties", () => {
     );
   });
 
-  it("keeps scan and export actions visible while long bodies scroll", () => {
+  it("keeps scan actions visible while long bodies scroll", () => {
     expect(translatorStyles).toMatch(
-      /\.translator-scan-dialog,\s*#stardew-i18n-translator \.translator-export-dialog\s*{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;[^}]*overflow:\s*hidden;/s,
+      /\.translator-scan-dialog\s*{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;[^}]*overflow:\s*hidden;/s,
     );
     expect(translatorStyles).toMatch(
-      /\.translator-scan-dialog > \.translator-flow-body,\s*#stardew-i18n-translator \.translator-export-dialog > \.translator-flow-body\s*{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+      /\.translator-scan-dialog > \.translator-flow-body\s*{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
     );
   });
 });
