@@ -51,6 +51,11 @@ export function ExportConfirmBody({
       : path;
   };
   const targetCount = existingFiles + newFiles;
+  // Translations exist, but the files already hold exactly them.
+  const nothingToWrite =
+    targetCount === 0 && (willWrite ?? 0) > 0
+      ? "Your translation files are already up to date"
+      : "No translation files to write";
   const targetPaths = [...existingTargetPaths, ...newTargetPaths];
   const [showAllPaths, setShowAllPaths] = useState(false);
   const modCount = mods ?? 1;
@@ -73,7 +78,7 @@ export function ExportConfirmBody({
           {newFiles === 1 ? "translation file" : "translation files"}
         </>
       )}
-      {targetCount === 0 && "No translation files to write"}.
+      {targetCount === 0 && nothingToWrite}.
     </>
   );
 
@@ -132,19 +137,19 @@ export function ExportConfirmBody({
                 )}
               </ul>
             ) : (
+              <p className="desktop-xd-dest-note">{nothingToWrite}.</p>
+            )}
+            {targetCount > 0 && (
               <p className="desktop-xd-dest-note">
-                No translation files to write.
+                {targetCount > 1
+                  ? "The game uses them on the next start."
+                  : "The game uses it on the next start."}
+                {existingFiles === 1 &&
+                  ` The existing ${baseName(existingTargetPaths[0] ?? "") || "file"} is backed up first (.json.bak).`}
+                {existingFiles > 1 &&
+                  ` ${existingFiles} existing files are backed up first (.json.bak).`}
               </p>
             )}
-            <p className="desktop-xd-dest-note">
-              {targetCount > 1
-                ? "The game uses them on the next start."
-                : "The game uses it on the next start."}
-              {existingFiles === 1 &&
-                ` The existing ${baseName(existingTargetPaths[0] ?? "") || "file"} is backed up first (.json.bak).`}
-              {existingFiles > 1 &&
-                ` ${existingFiles} existing files are backed up first (.json.bak).`}
-            </p>
           </div>
         </div>
 
@@ -202,10 +207,6 @@ export function ExportConfirmBody({
                     </ul>
                   </div>
                 )}
-                {existingTargetPaths.length === 0 &&
-                  newTargetPaths.length === 0 && (
-                    <p>The file list appears after export.</p>
-                  )}
                 {attention != null && attention > 0 && (
                   <p>
                     {reviewIncluded} in Review, {changedIncluded} Changed.

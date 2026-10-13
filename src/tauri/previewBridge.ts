@@ -684,7 +684,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
             preflight.files.push({
               modUniqueId: mod.modUniqueId,
               targetPath: file.targetPath,
-              action: values.some((row) => row.status === "translated")
+              action: values.some((row) => row.inTargetFile)
                 ? "replace"
                 : "create",
             });

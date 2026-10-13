@@ -1974,6 +1974,32 @@ describe("App shell", () => {
     expect(preflight).not.toHaveTextContent("y/i18n/de.json");
   });
 
+  it("says the files are already up to date when the export changes nothing", async () => {
+    mockExportConfigured(true, {
+      acceptedMismatches: 0,
+      omitted: [],
+      files: [
+        {
+          modUniqueId: "a.b",
+          targetPath: "x/i18n/de.json",
+          action: "unchanged",
+        },
+      ],
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await chooseToolbarAction("File actions", "Export current mod");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Export translations",
+    });
+    expect(preflight).toHaveTextContent(
+      "Your translation files are already up to date",
+    );
+    expect(preflight).not.toHaveTextContent("backed up first");
+  });
+
   it("exports all mods through one atomic backend command", async () => {
     const base = exportScan(false).mods[0];
     const scan = {

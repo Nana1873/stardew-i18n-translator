@@ -253,14 +253,14 @@ struct PreparedFile {
 }
 
 impl PreparedFile {
-    /// The target already holds exactly this content and no regional variant
-    /// needs removing. Rewriting it would only replace the previous backup
-    /// (often the original community translation) and touch its timestamp.
+    /// What [`execute_prepared`] would do with this file. Writing over an
+    /// existing target or a regional variant such as `de-DE.json` (which is
+    /// backed up and removed) counts as a replacement.
     fn planned_action(&self) -> Option<ExportFileAction> {
         if self.is_unchanged() {
             Some(ExportFileAction::Unchanged)
         } else if self.body.is_some() {
-            Some(if self.target_path.is_file() {
+            Some(if !self.removals.is_empty() {
                 ExportFileAction::Replace
             } else {
                 ExportFileAction::Create
@@ -272,6 +272,9 @@ impl PreparedFile {
         }
     }
 
+    /// The target already holds exactly this content and no regional variant
+    /// needs removing. Rewriting it would only replace the previous backup
+    /// (often the original community translation) and touch its timestamp.
     fn is_unchanged(&self) -> bool {
         let Some(body) = self.body.as_deref() else {
             return false;
@@ -1766,11 +1769,14 @@ mod tests {
         let fresh = root.join("fresh/i18n");
         let existing = root.join("existing/i18n");
         let untouched = root.join("untouched/i18n");
-        for dir in [&fresh, &existing, &untouched] {
+        let regional = root.join("regional/i18n");
+        for dir in [&fresh, &existing, &untouched, &regional] {
             write(&dir.join("default.json"), r#"{"k":"Hello"}"#);
         }
         write(&existing.join("de.json"), r#"{"k":"Alt"}"#);
-        for id in ["fresh.mod", "existing.mod"] {
+        // Only a regional file: the export writes de.json and removes it.
+        write(&regional.join("de-DE.json"), r#"{"k":"Alt"}"#);
+        for id in ["fresh.mod", "existing.mod", "regional.mod"] {
             translations::save_one(
                 &root,
                 id,
@@ -1787,6 +1793,7 @@ mod tests {
             ("fresh.mod", &fresh),
             ("existing.mod", &existing),
             ("untouched.mod", &untouched),
+            ("regional.mod", &regional),
         ]
         .into_iter()
         .map(|(id, dir)| ExportModInput {
@@ -1810,6 +1817,7 @@ mod tests {
             vec![
                 ("fresh.mod", ExportFileAction::Create),
                 ("existing.mod", ExportFileAction::Replace),
+                ("regional.mod", ExportFileAction::Replace),
             ]
         );
         assert!(!fresh.join("de.json").exists());
