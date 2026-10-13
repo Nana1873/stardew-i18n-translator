@@ -823,6 +823,30 @@
       "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
       "target": "Liebe @,^Bitte schön.%item object 388 5 %% Ein Geschenk",
       "blocked": true
+    },
+    {
+      "name": "a #$e# counted by $1 still blocks",
+      "source": "$1 metHarvey#Nice.#$e#Again.",
+      "target": "$1 metHarvey#Schön.#Nochmal.",
+      "blocked": true
+    },
+    {
+      "name": "a #$e# counted by $c still blocks",
+      "source": "$c 0.5#Sunny.#Rainy.#$e#Bye.",
+      "target": "$c 0.5#Sonnig.#Regnerisch.#Tschüss.",
+      "blocked": true
+    },
+    {
+      "name": "an added #$e$ is not the $e command",
+      "source": "Go.#$b#Later.",
+      "target": "Los.#$e$Später.",
+      "blocked": true
+    },
+    {
+      "name": "a letter gender version that adds a placeholder still blocks",
+      "source": "Hi {0}![#]T",
+      "target": "Hallo!¦Hallo {0}{0}![#]T",
+      "blocked": true
     }
   ],
   "explanations": [

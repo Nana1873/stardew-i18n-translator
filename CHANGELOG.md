@@ -20,8 +20,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 ### Fixed
 
 - A missing or extra `#$e#` is a note instead of a token error, so the string
-  is exported. Stardew Valley 1.6 skips this command, so the dialogue plays the
-  same; the old explanation that it ends the conversation was wrong.
+  is exported. Stardew Valley 1.6 skips this command; the old explanation that
+  it ends the conversation was wrong. After a `$1` or `$c` command it still
+  blocks, because the game counts that empty page to pick the next line.
 - A letter translated with a female version after `¦` is checked per player
   gender, and a female version hidden behind a second `[#]` is a note: the
   game shows only the text before the first `[#]`, so female players see the

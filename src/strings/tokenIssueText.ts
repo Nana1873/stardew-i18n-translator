@@ -185,6 +185,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
       : "Fine if intended.";
+  if (isDialogueEnd(token) && severity === "error")
+    return "After a $1 or $c command the game counts this empty page, so a different line or an empty box would show.";
   const command = dialogueCommandConsequence(token);
   if (command !== null) return command;
   if (token.startsWith("%item") || token.startsWith("%action"))

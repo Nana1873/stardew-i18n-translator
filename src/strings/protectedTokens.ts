@@ -241,6 +241,7 @@ export function tokenSeverity(
   sourceCount: number,
   targetCount: number,
   introducesMultiplePortraits: boolean,
+  pageSkip = false,
 ): TokenSeverity {
   const dropped = targetCount < sourceCount;
   const harmless =
@@ -258,16 +259,27 @@ export function tokenSeverity(
     // stays visible as literal `{{...}}` or breaks string.Format.
     (dropped && isPlaceholder(token)) ||
     (dropped && token.toLowerCase().startsWith("[articlefor")) ||
-    isDialogueEnd(token);
+    // After `$1` or `$c` the game counts pages, so there it is an error.
+    (isDialogueEnd(token) && !pageSkip);
   return harmless ? "warning" : "error";
 }
 
 /** `#$e#`: SDV 1.6 recognizes `$e` in `Dialogue.parseDialogueString` but does
- * nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused), so
- * adding or removing one changes nothing in the game. Mirrors Rust
+ * nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused).
+ * `#$e$` or `#$e*` is not that command and shows as text. Mirrors Rust
  * `is_dialogue_end`. */
 export function isDialogueEnd(token: string): boolean {
-  return /^#\$e[#$*]/.test(token);
+  return token === "#$e#";
+}
+
+/** Whether a page starts with `$1 <flag>` or `$c <chance>`: the game then
+ * jumps three pages ahead (`i += 3` in `Dialogue.parseDialogueString`), so
+ * every page after it, an empty `$e` one included, is counted. Mirrors Rust
+ * `has_page_skip`. */
+export function hasPageSkip(value: string): boolean {
+  return value
+    .split("#")
+    .some((page) => page.startsWith("$1 ") || page.startsWith("$c "));
 }
 
 /** Shape identities compare each well-formed switch as one block. They aren't

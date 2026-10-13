@@ -23,6 +23,7 @@ import {
   articleForArgument,
   branchText,
   extractProtectedTokens,
+  hasPageSkip,
   pagesWithMultiplePortraits,
   isGenderSwitchShape,
   tokenSeverity,
@@ -272,8 +273,12 @@ function mailDifferences(
   const sourceViews = genderViews(source.split(MAIL_TITLE)[0]);
   const targetViews = genderViews(target.split(MAIL_TITLE)[0]);
   const merged = new Map<string, TokenDifference>();
-  const delta = (item: TokenDifference) =>
-    Math.abs(item.sourceCount - item.targetCount);
+  // Keep the worse gender view: an error first, then the larger gap.
+  const worse = (item: TokenDifference, known: TokenDifference) =>
+    item.severity !== known.severity
+      ? item.severity === "error"
+      : Math.abs(item.sourceCount - item.targetCount) >
+        Math.abs(known.sourceCount - known.targetCount);
   for (
     let index = 0;
     index < Math.max(sourceViews.length, targetViews.length);
@@ -283,7 +288,7 @@ function mailDifferences(
     const targetView = targetViews[Math.min(index, targetViews.length - 1)];
     for (const difference of textDifferences(sourceView, targetView)) {
       const known = merged.get(difference.token);
-      if (!known || delta(difference) > delta(known))
+      if (!known || worse(difference, known))
         merged.set(difference.token, difference);
     }
   }
@@ -328,6 +333,7 @@ function textDifferences(source: string, target: string): TokenDifference[] {
   );
   const introducesMultiplePortraits =
     pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
+  const pageSkip = hasPageSkip(source) || hasPageSkip(target);
   const differences: TokenDifference[] = [];
   const addDifference = (
     token: string,
@@ -343,6 +349,7 @@ function textDifferences(source: string, target: string): TokenDifference[] {
         sourceCount,
         targetCount,
         introducesMultiplePortraits,
+        pageSkip,
       ),
     });
   for (const [token, count] of sourceTokens) {

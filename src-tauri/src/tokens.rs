@@ -431,15 +431,21 @@ fn covers_partner(difference: &TokenDifference, partner: &TokenDifference) -> bo
 }
 
 /// `#$e#`: SDV 1.6 recognizes `$e` in `Dialogue.parseDialogueString` but does
-/// nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused), so
-/// adding or removing one changes nothing in the game. Mirrors TS
+/// nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused).
+/// `#$e$` or `#$e*` is not that command and shows as text. Mirrors TS
 /// `isDialogueEnd`.
 fn is_dialogue_end(token: &str) -> bool {
-    token.starts_with("#$e")
-        && token
-            .chars()
-            .nth(3)
-            .is_some_and(|c| matches!(c, '#' | '$' | '*'))
+    token == "#$e#"
+}
+
+/// Whether a page starts with `$1 <flag>` or `$c <chance>`: the game then
+/// jumps three pages ahead (`i += 3` in `Dialogue.parseDialogueString`), so
+/// every page after it, an empty `$e` one included, is counted. Mirrors TS
+/// `hasPageSkip`.
+fn has_page_skip(value: &str) -> bool {
+    value
+        .split('#')
+        .any(|page| page.starts_with("$1 ") || page.starts_with("$c "))
 }
 
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors
@@ -480,6 +486,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         } else {
             "Fine if intended."
         };
+    }
+    if is_dialogue_end(token) && difference.is_error() {
+        return "After a $1 or $c command the game counts this empty page, so a different line or an empty box would show.";
     }
     if let Some(command) = dialogue_command_consequence(token) {
         return command;
@@ -640,6 +649,7 @@ fn token_severity(
     source_count: usize,
     target_count: usize,
     introduces_multiple_portraits: bool,
+    page_skip: bool,
 ) -> Severity {
     let dropped = target_count < source_count;
     let harmless = is_gender_switch_shape(token)
@@ -656,7 +666,8 @@ fn token_severity(
         // stays visible as literal `{{...}}` or breaks string.Format.
         || (dropped && is_placeholder(token))
         || (dropped && token.to_ascii_lowercase().starts_with("[articlefor"))
-        || is_dialogue_end(token);
+        // After `$1` or `$c` the game counts pages, so there it is an error.
+        || (is_dialogue_end(token) && !page_skip);
     if harmless {
         Severity::Warning
     } else {
@@ -694,12 +705,18 @@ fn mail_differences(source: &str, target: &str) -> Option<Vec<TokenDifference>> 
         let source_view = source_views[index.min(source_views.len() - 1)];
         let target_view = target_views[index.min(target_views.len() - 1)];
         for difference in text_differences(source_view, target_view) {
-            let delta = |item: &TokenDifference| item.source_count.abs_diff(item.target_count);
+            // Keep the worse gender view: an error first, then the larger gap.
+            let rank = |item: &TokenDifference| {
+                (
+                    item.is_error(),
+                    item.source_count.abs_diff(item.target_count),
+                )
+            };
             match merged
                 .iter_mut()
                 .find(|known| known.token == difference.token)
             {
-                Some(known) if delta(&difference) > delta(known) => *known = difference,
+                Some(known) if rank(&difference) > rank(known) => *known = difference,
                 Some(_) => {}
                 None => merged.push(difference),
             }
@@ -761,6 +778,7 @@ fn text_differences(source: &str, target: &str) -> Vec<TokenDifference> {
         .any(|token| is_gender_switch_shape(token));
     let introduces_multiple_portraits =
         pages_with_multiple_portraits(target) > pages_with_multiple_portraits(source);
+    let page_skip = has_page_skip(source) || has_page_skip(target);
     let mut tokens: Vec<String> = source_counts
         .keys()
         .chain(target_counts.keys())
@@ -789,6 +807,7 @@ fn text_differences(source: &str, target: &str) -> Vec<TokenDifference> {
                     source_count,
                     target_count,
                     introduces_multiple_portraits,
+                    page_skip,
                 ),
                 token,
                 source_count,
