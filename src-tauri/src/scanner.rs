@@ -1483,7 +1483,7 @@ impl Unloaded {
         let shown = |path: &Path| format!("Mods/{}", safe_relative_location(path, mods_path));
         match self {
             Self::ModsRoot => "The game only loads mods from folders inside the Mods folder, not a manifest.json placed directly in it.".to_string(),
-            Self::InsideFolder { has_manifest: true, .. } => "This manifest.json is inside another mod that has its own manifest.json, so the game does not load it.".to_string(),
+            Self::InsideFolder { has_manifest: true, .. } => "This manifest.json is inside another mod's folder, so SMAPI doesn't load it as a separate mod. The outer mod may still use it.".to_string(),
             Self::InsideFolder { folder, has_manifest: false } => format!(
                 "{} has a manifest.json, but the game doesn't load it because {} already contains other files.",
                 shown(dir),

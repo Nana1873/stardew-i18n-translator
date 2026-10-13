@@ -384,7 +384,7 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
   });
 
-  it("counts a mod folder the game doesn't load apart from translation folders", () => {
+  it("counts a mod folder SMAPI doesn't load apart from translation folders", () => {
     const unowned = (relativeLocation: string, reason: string) => ({
       packageId: null,
       componentUniqueId: null,
@@ -407,7 +407,7 @@ describe("ScanDialog", () => {
             ),
             unowned(
               "Mod/optional/Manifest.json",
-              "This manifest.json is inside another mod that has its own manifest.json, so the game does not load it.",
+              "This manifest.json is inside another mod's folder, so SMAPI doesn't load it as a separate mod. The outer mod may still use it.",
             ),
             unowned(
               "Loose/i18n",
@@ -422,7 +422,7 @@ describe("ScanDialog", () => {
 
     expect(
       screen.getAllByText(
-        /2 mod folders the game doesn't load and 1 translation folder the game doesn't use were ignored/,
+        /2 mod folders SMAPI doesn't load as mods and 1 translation folder the game doesn't use were ignored/,
       )[0],
     ).toBeInTheDocument();
     expect(screen.getByText("Pkg/[CP] X/manifest.json")).toBeInTheDocument();

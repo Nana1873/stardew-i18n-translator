@@ -144,7 +144,7 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   as `.png` or `.jpg`) or archives (such as `.zip`),
   so a `manifest.json` below such a folder, for example `Pkg/[CP] X` next to
   `Pkg/config.json` or `Mod/optional` inside another mod, is listed in the scan
-  as "mod folder the game doesn't load". A folder link no longer hides the
+  as a mod folder SMAPI doesn't load as a mod. A folder link no longer hides the
   real mod folder it points to.
 - The unreachable "Has target text" string filter is removed; a saved workspace
   that still stores it opens with the All filter.

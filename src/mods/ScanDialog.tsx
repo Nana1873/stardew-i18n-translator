@@ -462,7 +462,7 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
       ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
       : "",
     modFolders > 0
-      ? `${modFolders} mod ${modFolders === 1 ? "folder" : "folders"} the game doesn't load`
+      ? `${modFolders} mod ${modFolders === 1 ? "folder" : "folders"} SMAPI doesn't load as ${modFolders === 1 ? "a mod" : "mods"}`
       : "",
     folders > 0
       ? `${folders} translation ${folders === 1 ? "folder" : "folders"} the game doesn't use`
