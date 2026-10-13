@@ -12,7 +12,6 @@ import {
   HardDrive,
   Info,
   Keyboard,
-  RefreshCw,
   RotateCcw,
   Sparkles,
   Cloud,
@@ -38,11 +37,7 @@ import {
   openUrl,
   pickFolder,
 } from "../tauri/commands";
-import {
-  SOURCE_LANGUAGE_LABEL,
-  TARGET_LANGUAGES,
-  gameSupportsLanguage,
-} from "../languages";
+import { SOURCE_LANGUAGE_LABEL } from "../languages";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_COMMANDS,
@@ -54,6 +49,8 @@ import {
   shortcutProblem,
 } from "../shortcuts";
 import { useDialogAccessibility } from "../dialogAccessibility";
+import { GlossarySettings } from "./GlossarySettings";
+import { TargetLanguageOptions } from "./TargetLanguageOptions";
 import packageInfo from "../../package.json";
 
 const LLM_PRESETS: Record<string, string> = {
@@ -105,7 +102,6 @@ const DEFAULT_AI_SETTINGS = {
 
 const CLOUD_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 const DEFAULT_CHATGPT_MODEL = "gpt-6.1-sol";
-const englishNumberFormat = new Intl.NumberFormat("en-US");
 
 /** Shows data-folder file names in account messages as code. */
 function withCodePaths(message: string) {
@@ -771,7 +767,7 @@ export function SettingsDialog({
                 <label className="translator-setting-line">
                   <span className="translator-setting-copy">
                     <strong>Target language</strong>
-                    <span>Standard or curated custom language code</span>
+                    <span>The language you translate into</span>
                   </span>
                   <select
                     className="translator-select"
@@ -779,14 +775,7 @@ export function SettingsDialog({
                     onChange={(event) => setTargetLang(event.target.value)}
                     aria-label="Target language"
                   >
-                    <option value="" disabled>
-                      Choose a language…
-                    </option>
-                    {TARGET_LANGUAGES.map((language) => (
-                      <option key={language.code} value={language.code}>
-                        {language.label}
-                      </option>
-                    ))}
+                    <TargetLanguageOptions />
                   </select>
                 </label>
                 <div className="translator-setting-line">
@@ -1419,220 +1408,6 @@ export function SettingsDialog({
         </div>
       </section>
     </div>
-  );
-}
-
-function GlossarySettings({
-  active,
-  targetLang,
-  glossary,
-  building,
-  error,
-  onBuild,
-}: {
-  active: boolean;
-  targetLang: string;
-  glossary: GlossaryStatus | null;
-  building: boolean;
-  error: string | null;
-  onBuild: () => void;
-}) {
-  const supported = Boolean(targetLang && gameSupportsLanguage(targetLang));
-  const cached = glossary?.cached ?? null;
-  const available = Boolean(
-    glossary?.sourceAvailable && (supported || glossary.packAvailable),
-  );
-  const usableCache = Boolean(cached && !glossary?.outdatedCache);
-  const canBuild = Boolean(
-    targetLang &&
-    glossary &&
-    available &&
-    (supported || glossary.packAvailable),
-  );
-  const state = !glossary
-    ? "Checking glossary sources"
-    : glossary.outdatedCache
-      ? "Glossary needs an update"
-      : cached
-        ? available
-          ? "Glossary is up to date"
-          : "Cached glossary available"
-        : canBuild
-          ? "Glossary can be built"
-          : "Glossary unavailable";
-  const summaryTone =
-    cached && !glossary?.outdatedCache
-      ? " is-ready"
-      : glossary && (glossary.outdatedCache || canBuild)
-        ? " is-actionable"
-        : "";
-  const source = !glossary
-    ? "Checking local Stardew content"
-    : available && !supported && glossary.packAvailable
-      ? "Installed community language pack" +
-        (glossary.packName ? " · " + glossary.packName : "")
-      : available
-        ? "From your game files (read only)"
-        : "Unavailable";
-  const language =
-    TARGET_LANGUAGES.find((candidate) => candidate.code === targetLang)
-      ?.label ??
-    (targetLang || "No target language");
-
-  return (
-    <section
-      id="settings-panel-glossary"
-      className={"translator-settings-page" + (active ? " is-active" : "")}
-      role="tabpanel"
-      aria-label="Glossary"
-      hidden={!active}
-    >
-      <h3>Glossary</h3>
-      <p className="translator-settings-intro">
-        Optional term hints from local Stardew strings. The glossary does not
-        translate ordinary prose.
-      </p>
-      <div className={"translator-glossary-summary" + summaryTone}>
-        <div className="translator-glossary-main">
-          <strong>{state}</strong>
-          <span>{language}</span>
-          {state === "Glossary unavailable" && (
-            <span>Translation works without a glossary.</span>
-          )}
-        </div>
-        <div className="translator-glossary-number">
-          <strong>
-            {cached ? englishNumberFormat.format(cached.termCount) : "—"}
-          </strong>
-          <span>
-            {cached
-              ? cached.termCount === 1
-                ? "term"
-                : "terms"
-              : "no terms yet"}
-          </span>
-        </div>
-      </div>
-
-      <div className="translator-settings-group">
-        <div className="translator-setting-line">
-          <span className="translator-setting-copy">
-            <strong>{cached ? "Rebuild source" : "Source"}</strong>
-            <span>{source}</span>
-          </span>
-          {available && (
-            <span className="translator-state is-ready">Available</span>
-          )}
-        </div>
-
-        {!supported && glossary?.packAvailable && available && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>Community language pack</strong>
-              <span>
-                Stardew Valley doesn’t include this language, but{" "}
-                {glossary.packName || "an installed pack"} provides local
-                glossary sources.
-              </span>
-            </span>
-            <span className="translator-state is-ready">Detected</span>
-          </div>
-        )}
-
-        {!supported &&
-          glossary?.packAvailable &&
-          !available &&
-          !usableCache && (
-            <div className="translator-setting-line">
-              <span className="translator-setting-copy">
-                <strong>Notice</strong>
-                <span>
-                  A community language pack was detected
-                  {glossary.packName ? " (" + glossary.packName + ")" : ""}, but
-                  the game’s Content/Strings files with the English names were
-                  not found. Check the Stardew Valley folder above.
-                </span>
-              </span>
-            </div>
-          )}
-
-        {!supported && glossary && !glossary.packAvailable && !usableCache && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>Notice</strong>
-              <span>
-                Stardew Valley doesn’t include this language, so no official
-                glossary is available. Translation and export still work fully.
-              </span>
-            </span>
-            <span className="translator-state">Unavailable</span>
-          </div>
-        )}
-
-        {glossary && !available && (supported || usableCache) && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>Notice</strong>
-              <span>
-                {cached && !glossary.outdatedCache
-                  ? "Cached terms remain available. Rebuilding needs the game’s Content/Strings files."
-                  : "The game’s Content/Strings files were not found. Check the Stardew Valley folder above."}
-              </span>
-            </span>
-          </div>
-        )}
-
-        {canBuild && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>{language} cache</strong>
-              <span>
-                {cached
-                  ? "Stored locally · not included in a release"
-                  : "Not built yet · optional and stored locally"}
-              </span>
-              <span>Built glossaries are saved right away.</span>
-            </span>
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={onBuild}
-              disabled={building}
-            >
-              <RefreshCw aria-hidden="true" />{" "}
-              {building
-                ? "Building…"
-                : !supported && glossary?.packAvailable
-                  ? cached
-                    ? "Rebuild from community pack"
-                    : "Build from community pack"
-                  : cached
-                    ? "Rebuild glossary"
-                    : "Build glossary"}
-            </button>
-          </div>
-        )}
-
-        {glossary?.outdatedCache && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>Notice</strong>
-              <span>
-                An older glossary from a previous version was found — rebuild
-                recommended.
-              </span>
-            </span>
-            <span className="translator-state is-review">Outdated</span>
-          </div>
-        )}
-      </div>
-      {error && (
-        <p className="translator-shortcut-error" role="alert">
-          {error}
-        </p>
-      )}
-      {false}
-    </section>
   );
 }
 

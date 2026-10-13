@@ -20,26 +20,13 @@ describe("CSS custom properties", () => {
     expect([...used].filter((name) => !declared.has(name)).sort()).toEqual([]);
   });
 
-  it("binds the existing Setup layout to the application palette", () => {
-    expect(overrideStyles).toContain(
-      "#stardew-i18n-translator .wizard__backdrop",
+  it("draws Setup with the Settings dialog styles only", () => {
+    // Setup reuses the Settings frame; the old wizard styles are gone.
+    for (const sheet of [styles, overrideStyles, translatorStyles])
+      expect(sheet).not.toMatch(/\.(wizard|setup__)/);
+    expect(translatorStyles).toMatch(
+      /\.translator-setup-step\[data-state="current"\]\s*{[^}]*border-color:\s*var\(--translator-brand\);[^}]*background:\s*var\(--translator-brand-soft\);/s,
     );
-    expect(overrideStyles).toContain("#stardew-i18n-translator .wizard {");
-    expect(overrideStyles).toContain("background: var(--translator-surface);");
-    expect(overrideStyles).toContain("background: var(--translator-sidebar);");
-    expect(overrideStyles).toContain("background: var(--translator-brand);");
-    expect(overrideStyles).toContain("color: var(--translator-text);");
-    expect(overrideStyles).toContain(
-      "border-left-color: var(--translator-green);",
-    );
-    expect(overrideStyles).toContain(
-      "border-left-color: var(--translator-orange);",
-    );
-    expect(overrideStyles).toContain("color: var(--translator-red);");
-    expect(overrideStyles).toContain(
-      "#stardew-i18n-translator .wizard__path--empty .wizard__path-status",
-    );
-    expect(overrideStyles).toContain("color: var(--translator-faint);");
   });
 
   it("draws search and select fields with the strong input border", () => {

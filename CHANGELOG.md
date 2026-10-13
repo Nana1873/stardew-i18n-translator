@@ -15,6 +15,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   mods folder works too. The glossary step names its state, such as "Glossary
   ready" or "Rebuild your glossary", and its build buttons no longer compete
   with Finish.
+- Setup now looks like Settings: the same dialog frame, step list with icons,
+  folder and language rows, and the same glossary panel, so the glossary status
+  reads the same in both places. Settings groups target languages the same way.
 
 ### Fixed
 

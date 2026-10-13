@@ -1859,6 +1859,73 @@
   color: var(--translator-muted);
 }
 
+/* Setup uses the Settings dialog frame; its steps are a list, not tabs. */
+#stardew-i18n-translator .translator-setup-overlay {
+  position: fixed;
+  z-index: 80;
+}
+
+#stardew-i18n-translator .translator-setup-steps {
+  margin: 0;
+  list-style: none;
+}
+
+#stardew-i18n-translator .translator-setup-step {
+  align-items: flex-start;
+  cursor: default;
+}
+
+#stardew-i18n-translator .translator-setup-step:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+#stardew-i18n-translator .translator-setup-step > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+#stardew-i18n-translator .translator-setup-step > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+#stardew-i18n-translator .translator-setup-step small {
+  color: var(--translator-muted);
+  font-size: 0.86em;
+}
+
+#stardew-i18n-translator .translator-setup-step[data-state="current"] {
+  color: var(--translator-brand);
+  border-color: var(--translator-brand);
+  background: var(--translator-brand-soft);
+}
+
+#stardew-i18n-translator .translator-setup-step[data-state="complete"] > svg {
+  color: var(--translator-green);
+}
+
+#stardew-i18n-translator .translator-setup-step[data-state="upcoming"] {
+  color: var(--translator-muted);
+}
+
+#stardew-i18n-translator .translator-setup-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+#stardew-i18n-translator .translator-setup-problem {
+  color: var(--translator-red);
+}
+
+#stardew-i18n-translator .translator-setup-foot {
+  border-top: 1px solid var(--translator-border);
+  border-bottom: 0;
+}
+
 #stardew-i18n-translator .translator-settings-group {
   margin-top: 14px;
   background: var(--translator-surface-raised);

@@ -129,12 +129,10 @@ describe("SetupWizard", () => {
         name: "Welcome to Stardew i18n Translator",
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", { name: "Setup steps" }),
-    ).toHaveTextContent("Game folder");
-    expect(
-      screen.getByRole("progressbar", { name: "Setup progress" }),
-    ).toHaveAttribute("aria-valuenow", "1");
+    expect(screen.getByRole("list", { name: "Setup steps" })).toHaveTextContent(
+      "Game folder",
+    );
+    expect(screen.getByText("Step 1 of 4 · Game folder")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
     await waitFor(() =>
@@ -142,12 +140,10 @@ describe("SetupWizard", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
+    expect(screen.getByText("Step 2 of 4 · Mods folder")).toBeInTheDocument();
     expect(
-      screen.getByRole("progressbar", { name: "Setup progress" }),
-    ).toHaveAttribute("aria-valuenow", "2");
-    expect(screen.getByText("Game folder").closest(".setup__step")).toHaveClass(
-      "setup__step--complete",
-    );
+      screen.getByText("Game folder").closest(".translator-setup-step"),
+    ).toHaveAttribute("data-state", "complete");
   });
 
   it("auto-detect fills the path and enables Next", async () => {
@@ -218,8 +214,8 @@ describe("SetupWizard", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /StardewXnbHack/ })).toBeNull();
     expect(
-      screen.getByRole("region", { name: "How the glossary works" }),
-    ).toHaveTextContent("Read locally");
+      screen.getByRole("heading", { name: "Add a glossary" }),
+    ).toBeVisible();
     expect(screen.getByText(/never changed or uploaded/)).toBeInTheDocument();
   });
 
@@ -229,7 +225,7 @@ describe("SetupWizard", () => {
 
     expect(
       await screen.findByText(
-        /No local glossary source was found for this language/i,
+        /doesn.t include this language, so no official glossary/i,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
@@ -259,7 +255,7 @@ describe("SetupWizard", () => {
       render(<SetupWizard initial={null} onComplete={() => {}} />);
       await gotoGlossaryStep("th");
       expect(await screen.findByText("Glossary ready")).toBeVisible();
-      expect(screen.getByText(/7 official names are ready/)).toBeVisible();
+      expect(screen.getByText("7")).toBeVisible();
       expect(
         screen.getByText(
           sourceAvailable
@@ -310,8 +306,13 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep("th");
 
-    expect(await screen.findByText(/7 official names/)).toBeInTheDocument();
-    expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Glossary is up to date"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getAllByText(/Stardew Valley - THAI/).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("auto-builds the glossary when a game string source is present", async () => {
@@ -345,7 +346,10 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
-    expect(await screen.findByText(/42 official names/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Glossary is up to date"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("42")).toBeInTheDocument();
   });
 
   it("offers Cancel only when settings already exist", () => {
