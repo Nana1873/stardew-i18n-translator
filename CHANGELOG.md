@@ -135,6 +135,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   include or remove them; when the original mod has one, the ZIP preview names
   it so the translator can tell players, for example on the mod page, to
   delete it after installing the ZIP.
+- A mod folder the game never loads is no longer offered for translation or
+  used as a glossary language pack. The game stops looking inside a folder
+  once it holds any file other than readmes, text files, common images (such
+  as `.png` or `.jpg`) or archives (such as `.zip`),
+  so a `manifest.json` below such a folder, for example `Pkg/[CP] X` next to
+  `Pkg/config.json` or `Mod/optional` inside another mod, is listed in the scan
+  as "mod folder the game doesn't load". A folder link no longer hides the
+  real mod folder it points to.
 - The unreachable "Has target text" string filter is removed; a saved workspace
   that still stores it opens with the All filter.
 - A glossary built in Settings shows its hints in the editor right away,

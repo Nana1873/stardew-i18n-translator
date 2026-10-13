@@ -5,8 +5,9 @@
 //! discovers and reads the translatable `i18n/` units beneath each mod. Mods are
 //! grouped by package (top-level Mods subfolder).
 //!
-//! Edge cases handled: nested/multi-component mods (each manifest is
-//! its own mod; `i18n/` is associated with the nearest ancestor manifest),
+//! Edge cases handled: multi-component mods (each manifest SMAPI loads is its
+//! own mod; `i18n/` is associated with the nearest ancestor manifest), manifests
+//! SMAPI never reaches (reported as information, see `SmapiModFolders`),
 //! multiple `i18n/` folders per mod, Content Patcher data under `assets/i18n`
 //! (ignored because it is not a SMAPI translation target), malformed manifests
 //! (reported as structured skips), `Nexus:-1` sentinel IDs, BOM / `//` + `/* */`
@@ -359,15 +360,41 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // Build a mod per manifest, keyed by its folder.
     let mut mods: HashMap<PathBuf, ScannedMod> = HashMap::new();
     let mut order: Vec<PathBuf> = Vec::new();
-    let manifest_dirs: HashSet<PathBuf> = manifest_files
-        .iter()
-        .filter_map(|file| file.parent().map(Path::to_path_buf))
-        .collect();
+    // SMAPI only loads a manifest.json in a folder it reaches as a mod folder;
+    // one it never reaches is information, not a component.
+    let mut reach = SmapiModFolders::new(mods_path);
+    let mut unloaded_manifest_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut manifest_dirs: HashSet<PathBuf> = HashSet::new();
+    for manifest in &manifest_files {
+        let Some(dir) = manifest.parent() else {
+            continue;
+        };
+        match reach.blocker(dir) {
+            None => {
+                manifest_dirs.insert(dir.to_path_buf());
+            }
+            Some(blocker) => {
+                unloaded_manifest_dirs.insert(dir.to_path_buf());
+                skipped_components.push(SkippedComponent {
+                    package_id: None,
+                    component_unique_id: None,
+                    component_name: None,
+                    relative_location: safe_relative_location(manifest, mods_path),
+                    reason: blocker.reason(dir, mods_path),
+                    requires_attention: false,
+                    rest_of_package_loaded: false,
+                });
+            }
+        }
+    }
 
     for manifest in &manifest_files {
         let Some(dir) = manifest.parent() else {
             continue;
         };
+        if unloaded_manifest_dirs.contains(dir) {
+            continue;
+        }
         match read_manifest(manifest, dir, mods_path) {
             Ok(scanned) => {
                 order.push(dir.to_path_buf());
@@ -410,6 +437,19 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // Mods folder vanished mid-scan, the unresolved path refuses every read.
     let canonical_mods = canonical_root(mods_path).unwrap_or_else(|_| mods_path.to_path_buf());
     for i18n_dir in &i18n_dirs {
+        // Covered by the note for the unloaded manifest.json above it. SMAPI
+        // still searches below a manifest.json placed directly in Mods.
+        if i18n_dir
+            .parent()
+            .is_some_and(|dir| unloaded_manifest_dirs.contains(dir))
+            || i18n_dir
+                .ancestors()
+                .skip(1)
+                .take_while(|dir| *dir != mods_path)
+                .any(|dir| unloaded_manifest_dirs.contains(dir))
+        {
+            continue;
+        }
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             // SMAPI only loads i18n folders of a mod with a manifest. Report the
             // folder as information so it does not vanish without a trace.
@@ -1331,6 +1371,156 @@ fn package_id_for(dir: &Path, mods_path: &Path) -> Option<String> {
         .map(String::from)
 }
 
+/// File extensions SMAPI's mod scanner ignores (`ModScanner.IgnoreFileExtensions`,
+/// SMAPI 4.5.2 Toolkit), compared like .NET `FileInfo.Extension`.
+const SMAPI_IGNORED_EXTENSIONS: &[&str] = &[
+    ".doc", ".docx", ".md", ".rtf", ".txt", ".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png",
+    ".psd", ".tif", ".xcf", ".rar", ".zip", ".7z", ".tar", ".tar.gz", ".backup", ".bak", ".old",
+    ".url", ".lnk",
+];
+
+/// Names SMAPI's mod scanner ignores (`ModScanner.IgnoreFilesystemNames`).
+fn smapi_ignored_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("._")
+        || matches!(
+            name.as_str(),
+            "__folder_managed_by_vortex"
+                | ".ds_store"
+                | "__macosx"
+                | "mcs"
+                | "desktop.ini"
+                | "thumbs.db"
+        )
+}
+
+/// SMAPI's `ModScanner.IsRelevant` for a file.
+fn smapi_relevant_file(name: &str) -> bool {
+    let extension = name
+        .rfind('.')
+        .map(|index| name[index..].to_ascii_lowercase())
+        .unwrap_or_default();
+    !name.starts_with('.')
+        && !SMAPI_IGNORED_EXTENSIONS.contains(&extension.as_str())
+        && !smapi_ignored_name(name)
+}
+
+/// SMAPI's `ModScanner.IsRelevant` for a folder, plus its dot-folder skip.
+fn smapi_relevant_folder(name: &str) -> bool {
+    !name.starts_with('.') && !smapi_ignored_name(name)
+}
+
+/// Why SMAPI never reads a folder as a mod folder.
+enum Unloaded {
+    /// The Mods folder itself, which SMAPI only searches.
+    ModsRoot,
+    /// SMAPI reads this folder above it as a mod folder and stops there.
+    InsideFolder { folder: PathBuf, has_manifest: bool },
+    /// SMAPI skips this folder (or one above it) by name.
+    IgnoredFolder(PathBuf),
+}
+
+impl Unloaded {
+    fn reason(&self, dir: &Path, mods_path: &Path) -> String {
+        let shown = |path: &Path| format!("Mods/{}", safe_relative_location(path, mods_path));
+        match self {
+            Self::ModsRoot => "The game only loads mods from folders inside the Mods folder, not a manifest.json placed directly in it.".to_string(),
+            Self::InsideFolder { has_manifest: true, .. } => "This manifest.json is inside another mod that has its own manifest.json, so the game does not load it.".to_string(),
+            Self::InsideFolder { folder, has_manifest: false } => format!(
+                "{} has a manifest.json, but the game doesn't load it because {} already contains other files.",
+                shown(dir),
+                shown(folder)
+            ),
+            Self::IgnoredFolder(folder) => format!(
+                "{} has a manifest.json, but the game doesn't load it because it skips folders named {}.",
+                shown(dir),
+                folder.file_name().unwrap_or_default().to_string_lossy()
+            ),
+        }
+    }
+}
+
+/// Which folders SMAPI reads as mod folders, mirroring `ModScanner.GetModFolders`
+/// (decompiled SMAPI 4.5.2 Toolkit): starting at the Mods folder, SMAPI only
+/// descends into a folder that has relevant subfolders and no relevant files;
+/// any other folder it reaches is read as one mod folder and nothing inside is
+/// searched further.
+pub(crate) struct SmapiModFolders<'a> {
+    root: &'a Path,
+    /// Per folder: `None` when it has no relevant files, else whether one of
+    /// them is a manifest.json.
+    relevant_files: HashMap<PathBuf, Option<bool>>,
+}
+
+impl<'a> SmapiModFolders<'a> {
+    pub(crate) fn new(root: &'a Path) -> Self {
+        Self {
+            root,
+            relevant_files: HashMap::new(),
+        }
+    }
+
+    /// Whether SMAPI reads `dir` (a folder below the Mods folder) as a mod folder.
+    pub(crate) fn loads(&mut self, dir: &Path) -> bool {
+        self.blocker(dir).is_none()
+    }
+
+    fn blocker(&mut self, dir: &Path) -> Option<Unloaded> {
+        // Paths outside the walked root cannot be judged; keep them.
+        let relative = dir.strip_prefix(self.root).ok()?;
+        let names: Vec<_> = relative
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect();
+        if names.is_empty() {
+            return Some(Unloaded::ModsRoot);
+        }
+        let mut current = self.root.to_path_buf();
+        for (index, name) in names.iter().enumerate() {
+            current.push(name);
+            if !smapi_relevant_folder(&name.to_string_lossy()) {
+                return Some(Unloaded::IgnoredFolder(current));
+            }
+            if index + 1 == names.len() {
+                return None;
+            }
+            if let Some(has_manifest) = self.relevant_files_in(&current) {
+                return Some(Unloaded::InsideFolder {
+                    folder: current,
+                    has_manifest,
+                });
+            }
+        }
+        None
+    }
+
+    fn relevant_files_in(&mut self, folder: &Path) -> Option<bool> {
+        if let Some(cached) = self.relevant_files.get(folder) {
+            return *cached;
+        }
+        // An unreadable folder counts as searchable, so its components stay
+        // offered; the walk already reports the read problem.
+        let mut found: Option<bool> = None;
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let is_file = entry.file_type().is_ok_and(|file_type| {
+                file_type.is_file()
+                    || (file_type.is_symlink()
+                        && std::fs::metadata(entry.path()).is_ok_and(|meta| meta.is_file()))
+            });
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if is_file && smapi_relevant_file(&name) {
+                let is_manifest = name.eq_ignore_ascii_case("manifest.json");
+                found = Some(found.unwrap_or(false) || is_manifest);
+            }
+        }
+        self.relevant_files.insert(folder.to_path_buf(), found);
+        found
+    }
+}
+
 fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> Option<PathBuf> {
     let mut current = i18n_dir.parent();
     while let Some(dir) = current {
@@ -1650,7 +1840,8 @@ fn build_i18n_file(
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
 /// `default.json`. Bounded by depth, the canonical root, and a
 /// visited-canonical-path set (cycles). Links that resolve outside `root` are
-/// never traversed.
+/// never traversed, and folder links are walked last so a folder reachable
+/// directly is always recorded under its real path.
 /// Returns `false` when filesystem errors or traversal limits may have omitted
 /// content. Intentional exclusions, including links outside `root`, remain a
 /// complete traversal.
@@ -1675,10 +1866,13 @@ fn collect_bounded(
     };
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+    // Folder links are walked only after every real folder, so a folder reached
+    // both directly and through a link keeps its real path.
+    let mut linked: Vec<(PathBuf, usize)> = Vec::new();
     let mut dirs_seen = 0usize;
     let mut complete = true;
 
-    while let Some((dir, depth)) = stack.pop() {
+    while let Some((dir, depth)) = stack.pop().or_else(|| linked.pop()) {
         let Ok(canonical) = std::fs::canonicalize(&dir) else {
             complete = false;
             continue;
@@ -1807,7 +2001,11 @@ fn collect_bounded(
                     }
                     continue; // no mods nested inside an i18n folder
                 }
-                stack.push((path, depth + 1));
+                if symlink_target.is_some() {
+                    linked.push((path, depth + 1));
+                } else {
+                    stack.push((path, depth + 1));
+                }
             }
         }
     }
@@ -2175,6 +2373,228 @@ mod tests {
         // Sentinel Nexus:-1 -> no id.
         let cc = result.mods.iter().find(|m| m.name == "[CC] RSV").unwrap();
         assert_eq!(cc.nexus_id, None);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn ignores_manifest_nested_inside_another_mod_like_smapi() {
+        let root = crate::test_support::temp_dir("scan-nested-manifest");
+        write(
+            &root.join("Mod").join("manifest.json"),
+            "{ \"Name\": \"Outer\", \"UniqueID\": \"outer.mod\" }",
+        );
+        write(
+            &root.join("Mod").join("i18n").join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+        write(
+            &root.join("Mod").join("optional").join("manifest.json"),
+            "{ \"Name\": \"Inner\", \"UniqueID\": \"inner.mod\" }",
+        );
+        write(
+            &root
+                .join("Mod")
+                .join("optional")
+                .join("i18n")
+                .join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+        // Sibling components in a package folder without a manifest still work.
+        for name in ["[CP] X", "[JA] X"] {
+            write(
+                &root.join("Pkg").join(name).join("manifest.json"),
+                &format!("{{ \"Name\": \"{name}\", \"UniqueID\": \"id.{name}\" }}"),
+            );
+            write(
+                &root
+                    .join("Pkg")
+                    .join(name)
+                    .join("i18n")
+                    .join("default.json"),
+                "{ \"k\": \"v\" }",
+            );
+        }
+
+        let result = scan_mods(&root, "de", &root);
+
+        let mut names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["Outer", "[CP] X", "[JA] X"]);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(result.skipped_components.len(), 1);
+        let note = &result.skipped_components[0];
+        assert_eq!(note.relative_location, "Mod/optional/manifest.json");
+        assert!(!note.requires_attention);
+        assert!(note.package_id.is_none() && note.component_unique_id.is_none());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    fn write_component(dir: &Path, name: &str) {
+        write(
+            &dir.join("manifest.json"),
+            &format!("{{ \"Name\": \"{name}\", \"UniqueID\": \"id.{name}\" }}"),
+        );
+        write(&dir.join("i18n").join("default.json"), "{ \"k\": \"v\" }");
+    }
+
+    #[test]
+    fn package_folder_with_only_ignorable_files_is_searched_like_smapi() {
+        let root = crate::test_support::temp_dir("scan-package-ignorable-files");
+        let package = root.join("Pkg");
+        for file in [
+            "README.md",
+            "notes.txt",
+            "preview.png",
+            "__folder_managed_by_vortex",
+            "desktop.ini",
+            ".hidden",
+        ] {
+            write(&package.join(file), "x");
+        }
+        write_component(&package.join("[CP] X"), "[CP] X");
+        write_component(&package.join("[JA] X"), "[JA] X");
+        // A folder SMAPI skips by name does not make Pkg a mod folder either.
+        write_component(&package.join("__MACOSX").join("X"), "Mac copy");
+
+        let result = scan_mods(&root, "de", &root);
+
+        let mut names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["[CP] X", "[JA] X"]);
+        assert_eq!(result.skipped_components.len(), 1);
+        let note = &result.skipped_components[0];
+        assert_eq!(note.relative_location, "Pkg/__MACOSX/X/manifest.json");
+        assert_eq!(
+            note.reason,
+            "Mods/Pkg/__MACOSX/X has a manifest.json, but the game doesn't load it because it skips folders named __MACOSX."
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn other_files_in_a_package_folder_hide_its_components_like_smapi() {
+        let root = crate::test_support::temp_dir("scan-package-with-files");
+        write(&root.join("Pkg").join("config.json"), "{}");
+        write_component(&root.join("Pkg").join("[CP] X"), "[CP] X");
+        write_component(&root.join("Other"), "Other");
+
+        let result = scan_mods(&root, "de", &root);
+
+        let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Other"]);
+        // One note for the component; its i18n folder is not reported again.
+        assert_eq!(result.skipped_components.len(), 1);
+        let note = &result.skipped_components[0];
+        assert_eq!(note.relative_location, "Pkg/[CP] X/manifest.json");
+        assert_eq!(
+            note.reason,
+            "Mods/Pkg/[CP] X has a manifest.json, but the game doesn't load it because Mods/Pkg already contains other files."
+        );
+        assert!(!note.requires_attention);
+        assert!(note.package_id.is_none() && note.component_unique_id.is_none());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn manifest_directly_in_mods_is_not_a_mod_and_hides_nothing() {
+        let root = crate::test_support::temp_dir("scan-root-manifest");
+        write_component(&root, "Root");
+        write_component(&root.join("Mod"), "Mod");
+
+        let result = scan_mods(&root, "de", &root);
+
+        let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Mod"]);
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "manifest.json"
+        );
+        assert_eq!(
+            result.skipped_components[0].reason,
+            "The game only loads mods from folders inside the Mods folder, not a manifest.json placed directly in it."
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn i18n_anywhere_below_an_unloaded_manifest_is_not_reported_twice() {
+        let root = crate::test_support::temp_dir("scan-unloaded-deep-i18n");
+        write_component(&root.join("Mod"), "Outer");
+        write(
+            &root.join("Mod").join("opt").join("Manifest.json"),
+            "{ \"Name\": \"Inner\", \"UniqueID\": \"inner.mod\" }",
+        );
+        write(
+            &root
+                .join("Mod")
+                .join("opt")
+                .join("assets")
+                .join("i18n")
+                .join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+
+        let result = scan_mods(&root, "de", &root);
+
+        let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Outer"]);
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Mod/opt/Manifest.json"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn folder_link_does_not_hide_the_real_mod_it_points_to() {
+        let root = crate::test_support::temp_dir("scan-link-to-real-mod");
+        let real = root.join("AAA");
+        write_component(&real, "Real");
+        write_component(&root.join("ZZZ"), "Holder");
+        let link = root.join("ZZZ").join("link");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&real, &link).is_ok();
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(&real, &link).is_ok()
+            || std::process::Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "New-Item -ItemType Junction -Path '{}' -Target '{}' | Out-Null",
+                        link.display(),
+                        real.display()
+                    ),
+                ])
+                .status()
+                .is_ok_and(|status| status.success());
+        if !linked || !link.is_dir() {
+            // Links unavailable on this machine; nothing to check.
+            std::fs::remove_dir_all(&root).ok();
+            return;
+        }
+
+        let result = scan_mods(&root, "de", &root);
+
+        let mut names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["Holder", "Real"]);
+        let real_mod = result.mods.iter().find(|m| m.name == "Real").unwrap();
+        assert_eq!(Path::new(&real_mod.folder_path), real.as_path());
+        assert!(
+            result.skipped_components.is_empty(),
+            "{:?}",
+            result.skipped_components
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -2703,7 +3123,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_ignore_i18n_owned_by_an_assets_child_mod() {
+    fn ignores_i18n_owned_by_a_manifest_nested_in_an_assets_folder() {
         let root = crate::test_support::temp_dir("scanner-assets-child-owner");
         let package = root.join("Package");
         write(
@@ -2721,16 +3141,15 @@ mod tests {
         );
 
         let result = scan_mods(&root, "de", &root);
-        assert_eq!(result.mod_count, 1, "parent and child share one package");
-        assert_eq!(result.file_count, 2);
-        assert_eq!(result.mods.len(), 2, "both components remain available");
-        let child = result
-            .mods
-            .iter()
-            .find(|candidate| candidate.unique_id == "Author.Child")
-            .expect("assets child mod should remain translatable");
-        assert_eq!(child.i18n_files.len(), 1);
-        assert_eq!(child.i18n_files[0].relative_dir, "i18n");
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.file_count, 1);
+        assert_eq!(result.mods.len(), 1, "SMAPI never loads the nested child");
+        assert_eq!(result.mods[0].unique_id, "Author.Parent");
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Package/assets/manifest.json"
+        );
         std::fs::remove_dir_all(root).ok();
     }
 

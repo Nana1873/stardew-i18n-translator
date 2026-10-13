@@ -1358,7 +1358,12 @@ mod tests {
     #[test]
     fn package_zip_rejects_changed_versions_components_and_workspace() {
         let (root, config, mods) = output_fixture("package-fresh-binding");
-        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        let component = output_component(
+            &mods,
+            "Pack/Main",
+            "Fixture.Package",
+            r#"{"hello":"Hello"}"#,
+        );
         let displayed = scanned_package(&config, &mods, "Pack");
         write(
             &component.join("manifest.json"),

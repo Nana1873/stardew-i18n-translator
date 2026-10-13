@@ -74,6 +74,8 @@ pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
     let mut manifests = Vec::new();
     let mut i18n_dirs = Vec::new();
     scanner::collect(mods_dir, &mut manifests, &mut i18n_dirs);
+    // A pack the game never loads supplies no names in game.
+    let mut reach = scanner::SmapiModFolders::new(mods_dir);
 
     // (pack, score), score = count of typed-asset Strings files in the folder.
     let mut candidates: Vec<(LanguagePack, usize)> = Vec::new();
@@ -82,7 +84,7 @@ pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
         let Some(mod_dir) = manifest.parent() else {
             continue;
         };
-        if !is_content_patcher_pack(mod_dir) {
+        if !reach.loads(mod_dir) || !is_content_patcher_pack(mod_dir) {
             continue;
         }
         let Some(content) = read_json(&mod_dir.join("content.json")) else {
@@ -863,6 +865,28 @@ mod tests {
         assert_eq!(detection.pack.unwrap().name, "Bbb");
         assert_eq!(detection.warnings.len(), 1);
         assert!(detection.warnings[0].contains("Bbb"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn pack_the_game_does_not_load_is_not_used() {
+        let root = crate::test_support::temp_dir("lp-unloaded");
+        // SMAPI reads `Pkg` as one mod folder because it has a file of its own,
+        // so the pack inside it is never loaded.
+        write(&root.join("Pkg").join("config.json"), "{}");
+        write_pack(
+            &root.join("Pkg").join("Pack"),
+            "Pack",
+            "th",
+            &[("Objects", r#"{ "24": "ก" }"#)],
+        );
+        assert!(detect_language_pack(&root, "th").pack.is_none());
+
+        // Without that file SMAPI searches `Pkg` and loads the pack.
+        std::fs::remove_file(root.join("Pkg").join("config.json")).unwrap();
+        write(&root.join("Pkg").join("README.md"), "readme");
+        assert_eq!(detect_language_pack(&root, "th").pack.unwrap().name, "Pack");
 
         std::fs::remove_dir_all(&root).ok();
     }

@@ -443,23 +443,36 @@ function groupExtraKeys(diagnostics: ExtraKeyDiagnostic[]): ExtraKeyGroup[] {
 }
 
 /** Expected exclusions are community language packs (they belong to a
- * package) or `i18n` folders SMAPI does not load: without a manifest, or
- * deeper inside a mod than the folder beside its manifest. */
+ * package), mod folders whose `manifest.json` the game never reaches (no
+ * package, location ends in `manifest.json`), or `i18n` folders SMAPI does not
+ * load: without a manifest, or deeper inside a mod than the folder beside its
+ * manifest. */
 function describeExpectedExclusions(components: SkippedComponent[]): string {
   if (components.length === 0) return "";
-  const folders = components.filter(
+  const unowned = components.filter(
     (component) => !component.packageId && !component.componentUniqueId,
+  );
+  const modFolders = unowned.filter((component) =>
+    /(^|\/)manifest\.json$/i.test(component.relativeLocation),
   ).length;
-  const packs = components.length - folders;
+  const folders = unowned.length - modFolders;
+  const packs = components.length - unowned.length;
   const parts = [
     packs > 0
       ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
+      : "",
+    modFolders > 0
+      ? `${modFolders} mod ${modFolders === 1 ? "folder" : "folders"} the game doesn't load`
       : "",
     folders > 0
       ? `${folders} translation ${folders === 1 ? "folder" : "folders"} the game doesn't use`
       : "",
   ].filter(Boolean);
-  return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
+  const list =
+    parts.length > 1
+      ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`
+      : parts[0];
+  return `${list} ${components.length === 1 ? "was" : "were"} ignored`;
 }
 
 /** What a translator needs to know about English source changes since the
