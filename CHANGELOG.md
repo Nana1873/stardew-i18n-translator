@@ -19,6 +19,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- The Export… dialog counts only the mods and files an export would really
+  change. For All mods with JSON it listed every mod with translation files,
+  including mods with nothing translated yet, which the export never touches.
+  The ZIP for all mods names the language like the other exports, such as
+  "German (de)" instead of "de (de)", without its extra note.
 - Setup and the Settings glossary page no longer recommend a rebuild when a
   glossary file from before version 1.4 is still in the data folder but a
   current glossary exists, or when no rebuild is possible because the game

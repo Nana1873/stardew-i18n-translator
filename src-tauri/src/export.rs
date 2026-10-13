@@ -223,6 +223,26 @@ pub struct ExportPreflight {
     /// Strings left out of the export because of game-breaking token errors;
     /// the game shows their English source until they are fixed or accepted.
     pub omitted: Vec<ExportPreflightProblem>,
+    /// What the export would do with each target file. A file with nothing to
+    /// write and nothing to remove is not listed.
+    pub files: Vec<ExportPlannedFile>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ExportFileAction {
+    Create,
+    Replace,
+    Remove,
+    Unchanged,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPlannedFile {
+    pub mod_unique_id: String,
+    pub target_path: String,
+    pub action: ExportFileAction,
 }
 
 struct PreparedFile {
@@ -236,6 +256,22 @@ impl PreparedFile {
     /// The target already holds exactly this content and no regional variant
     /// needs removing. Rewriting it would only replace the previous backup
     /// (often the original community translation) and touch its timestamp.
+    fn planned_action(&self) -> Option<ExportFileAction> {
+        if self.is_unchanged() {
+            Some(ExportFileAction::Unchanged)
+        } else if self.body.is_some() {
+            Some(if self.target_path.is_file() {
+                ExportFileAction::Replace
+            } else {
+                ExportFileAction::Create
+            })
+        } else if !self.removals.is_empty() {
+            Some(ExportFileAction::Remove)
+        } else {
+            None
+        }
+    }
+
     fn is_unchanged(&self) -> bool {
         let Some(body) = self.body.as_deref() else {
             return false;
@@ -585,6 +621,15 @@ pub fn preview_export(
         }
         let prepared = prepare_mod(config_dir, &request.mod_unique_id, &request.files)?;
         preview.accepted_mismatches += prepared.accepted_mismatches;
+        preview
+            .files
+            .extend(prepared.files.iter().filter_map(|file| {
+                file.planned_action().map(|action| ExportPlannedFile {
+                    mod_unique_id: request.mod_unique_id.clone(),
+                    target_path: file.target_path.display().to_string(),
+                    action,
+                })
+            }));
         preview
             .omitted
             .extend(
@@ -1711,6 +1756,63 @@ mod tests {
         assert_eq!(problem.key, "bad");
         assert!(!clean.join("de.json").exists());
         assert!(!blocked.join("de.json").exists());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn export_preview_lists_only_files_the_export_would_touch() {
+        let root = crate::test_support::temp_dir("export-preview-files");
+        let fresh = root.join("fresh/i18n");
+        let existing = root.join("existing/i18n");
+        let untouched = root.join("untouched/i18n");
+        for dir in [&fresh, &existing, &untouched] {
+            write(&dir.join("default.json"), r#"{"k":"Hello"}"#);
+        }
+        write(&existing.join("de.json"), r#"{"k":"Alt"}"#);
+        for id in ["fresh.mod", "existing.mod"] {
+            translations::save_one(
+                &root,
+                id,
+                translations::entry_key("i18n", "k"),
+                translations::StoredString {
+                    target: "Hallo".into(),
+                    status: "translated".into(),
+                    source_hash: translations::source_hash("Hello"),
+                },
+            )
+            .unwrap();
+        }
+        let mods: Vec<_> = [
+            ("fresh.mod", &fresh),
+            ("existing.mod", &existing),
+            ("untouched.mod", &untouched),
+        ]
+        .into_iter()
+        .map(|(id, dir)| ExportModInput {
+            mod_unique_id: id.into(),
+            mod_name: id.into(),
+            files: input(dir),
+        })
+        .collect();
+
+        let preview = preview_export(&root, &mods).unwrap();
+
+        let actions: Vec<_> = preview
+            .files
+            .iter()
+            .map(|file| (file.mod_unique_id.as_str(), file.action))
+            .collect();
+        // A mod without translations and without a target file is not listed:
+        // the export writes nothing there.
+        assert_eq!(
+            actions,
+            vec![
+                ("fresh.mod", ExportFileAction::Create),
+                ("existing.mod", ExportFileAction::Replace),
+            ]
+        );
+        assert!(!fresh.join("de.json").exists());
 
         std::fs::remove_dir_all(root).ok();
     }

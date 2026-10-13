@@ -11,6 +11,7 @@ import { vi } from "vitest";
 
 const invokeMock = vi.fn();
 let backendHistory: OperationHistoryEntry[] = [];
+const scannedTargets = new Map<string, boolean>();
 let fileDropHandler:
   | ((
       event:
@@ -38,14 +39,39 @@ vi.mock("@tauri-apps/api/core", () => ({
           },
       );
     }
+    if (cmd === "scan_mods") {
+      // Remember which targets exist, so the export preview below can plan
+      // like the backend does.
+      return Promise.resolve(mocked).then((value) => {
+        for (const mod of (value as ScanResult | null)?.mods ?? [])
+          for (const file of mod.i18nFiles)
+            scannedTargets.set(file.targetPath, file.targetExists);
+        return value;
+      });
+    }
     if (cmd === "preview_export") {
-      return Promise.resolve(mocked).then(
-        (value) =>
-          value ?? {
-            acceptedMismatches: 0,
-            omitted: [],
-          },
-      );
+      const requested =
+        (args as { mods?: ExportModInput[] } | undefined)?.mods ?? [];
+      return Promise.resolve(mocked).then((value) => {
+        const preflight = (value ?? {
+          acceptedMismatches: 0,
+          omitted: [],
+        }) as Partial<ExportPreflight>;
+        return {
+          ...preflight,
+          files:
+            preflight.files ??
+            requested.flatMap((mod) =>
+              mod.files.map((file) => ({
+                modUniqueId: mod.modUniqueId,
+                targetPath: file.targetPath,
+                action: scannedTargets.get(file.targetPath)
+                  ? "replace"
+                  : "create",
+              })),
+            ),
+        };
+      });
     }
     return mocked;
   },
@@ -82,6 +108,7 @@ import { App } from "./App";
 import type {
   AiRunResult,
   AppSettings,
+  ExportModInput,
   ExportPreflight,
   Glossary,
   LlmImportPreflight,
@@ -416,11 +443,22 @@ function scanWithMod(uniqueId: string, name: string) {
   return result;
 }
 
+function plannedFiles(targetExists: boolean): ExportPreflight["files"] {
+  return [
+    {
+      modUniqueId: "a.b",
+      targetPath: "x/i18n/de.json",
+      action: targetExists ? "replace" : "create",
+    },
+  ];
+}
+
 function mockExportConfigured(
   targetExists: boolean,
   preflight: ExportPreflight = {
     acceptedMismatches: 0,
     omitted: [],
+    files: plannedFiles(targetExists),
   },
 ) {
   invokeMock.mockImplementation((cmd: string) => {
@@ -1221,7 +1259,11 @@ describe("App shell", () => {
           return Promise.resolve(zipPreview);
         if (cmd === "preview_export")
           return ++preflights === 1
-            ? Promise.resolve({ acceptedMismatches: 0, omitted: [] })
+            ? Promise.resolve({
+                acceptedMismatches: 0,
+                omitted: [],
+                files: plannedFiles(true),
+              })
             : pending.promise;
         if (cmd === "export_mod" || cmd === "export_all_mods")
           return new Promise(() => {});
@@ -1249,7 +1291,13 @@ describe("App shell", () => {
         "true",
       );
 
-      act(() => pending.resolve({ acceptedMismatches: 0, omitted: [] }));
+      act(() =>
+        pending.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: plannedFiles(true),
+        }),
+      );
       const ready = await within(
         screen.getByRole("dialog", { name: "Export translations" }),
       ).findByRole("button", { name: "Replace in Mods folder" });
@@ -1273,7 +1321,11 @@ describe("App shell", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
 
       await act(async () => {
-        pending.resolve({ acceptedMismatches: 0, omitted: [] });
+        pending.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: plannedFiles(false),
+        });
         await pending.promise;
       });
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -1302,7 +1354,11 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(screen.queryByRole("dialog")).toBeNull();
       await act(async () => {
-        pending.resolve({ acceptedMismatches: 0, omitted: [] });
+        pending.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: plannedFiles(false),
+        });
         await pending.promise;
       });
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -1363,7 +1419,11 @@ describe("App shell", () => {
     ).toHaveLength(1);
 
     act(() => {
-      preflight.resolve({ acceptedMismatches: 0, omitted: [] });
+      preflight.resolve({
+        acceptedMismatches: 0,
+        omitted: [],
+        files: plannedFiles(false),
+      });
     });
     await waitFor(() =>
       expect(document.getElementById("translator-zip-title")).toBeNull(),
@@ -1383,7 +1443,11 @@ describe("App shell", () => {
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
       if (cmd === "load_strings") return Promise.resolve([]);
       if (cmd === "preview_export")
-        return Promise.resolve({ acceptedMismatches: 0, omitted: [] });
+        return Promise.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: plannedFiles(false),
+        });
       if (cmd === "export_mod") return exported.promise;
       return Promise.resolve(null);
     });
@@ -1536,6 +1600,7 @@ describe("App shell", () => {
     mockExportConfigured(false, {
       acceptedMismatches: 2,
       omitted: [],
+      files: plannedFiles(false),
     });
     render(<App />);
     openWorkspace();
@@ -1813,6 +1878,13 @@ describe("App shell", () => {
         exports += 1;
         return Promise.resolve(removedResult);
       }
+      if (cmd === "preview_export")
+        // The first export removed the target, so the next one creates it.
+        return Promise.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: plannedFiles(exports === 0),
+        });
       return Promise.resolve(null);
     });
     render(<App />);
@@ -1844,6 +1916,62 @@ describe("App shell", () => {
       }),
     );
     await waitFor(() => expect(exports).toBe(2));
+  });
+
+  it("counts only the mods and files the all-mod export would write", async () => {
+    const base = exportScan(false).mods[0];
+    const scan = {
+      ...exportScan(false),
+      mods: [
+        { ...base, uniqueId: "a.first", name: "First Mod" },
+        {
+          ...base,
+          uniqueId: "b.untranslated",
+          name: "Untranslated Mod",
+          translatedKeys: 0,
+          i18nFiles: base.i18nFiles.map((file) => ({
+            ...file,
+            defaultPath: "y/i18n/default.json",
+            targetPath: "y/i18n/de.json",
+          })),
+        },
+      ],
+      modCount: 2,
+      fileCount: 2,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      // The backend writes nothing for a mod without translations.
+      if (cmd === "preview_export")
+        return Promise.resolve({
+          acceptedMismatches: 0,
+          omitted: [],
+          files: [
+            {
+              modUniqueId: "a.first",
+              targetPath: "x/i18n/de.json",
+              action: "create",
+            },
+          ],
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "File actions" }),
+      ).toBeEnabled(),
+    );
+    await chooseToolbarAction("File actions", "Export all mods …");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Export translations",
+    });
+    expect(preflight).toHaveTextContent("1 mod · German (de)");
+    expect(preflight).toHaveTextContent("Creates 1 new translation file");
+    expect(preflight).not.toHaveTextContent("y/i18n/de.json");
   });
 
   it("exports all mods through one atomic backend command", async () => {

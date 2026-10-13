@@ -670,10 +670,25 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     }
     case "preview_export": {
       const mods = args.mods as ExportModInput[];
-      const preflight: ExportPreflight = { acceptedMismatches: 0, omitted: [] };
+      const preflight: ExportPreflight = {
+        acceptedMismatches: 0,
+        omitted: [],
+        files: [],
+      };
       for (const mod of mods) {
         const map = rows.get(mod.modUniqueId) ?? new Map<string, RowState>();
-        for (const row of map.values()) {
+        const values = [...map.values()];
+        // Like the real export: only mods with translations get a file.
+        if (values.some((row) => row.target !== ""))
+          for (const file of mod.files)
+            preflight.files.push({
+              modUniqueId: mod.modUniqueId,
+              targetPath: file.targetPath,
+              action: values.some((row) => row.status === "translated")
+                ? "replace"
+                : "create",
+            });
+        for (const row of values) {
           if (row.tokenMismatchAccepted && row.target !== "")
             preflight.acceptedMismatches += 1;
           const bad = blockingIssues(row);

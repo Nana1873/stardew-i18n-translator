@@ -25,6 +25,7 @@ import {
   type AppSettings,
   type CloudAiStatus,
   type ExportAllResult,
+  type ExportPreflight,
   type ExportPreflightProblem,
   type GlossaryEntry,
   type LlmBatchItem,
@@ -1658,12 +1659,27 @@ export function App() {
     };
   }
 
+  /** Target files from the export preview: what the export would really
+   *  replace or create. Unchanged files and mods without translations are
+   *  left out, so the dialog never counts files nothing is written to. */
+  function plannedTargets(preflight: ExportPreflight) {
+    const existing = preflight.files.filter(
+      (file) => file.action === "replace" || file.action === "remove",
+    );
+    const created = preflight.files.filter((file) => file.action === "create");
+    return {
+      existingFiles: existing.length,
+      newFiles: created.length,
+      existingTargetPaths: existing.map((file) => file.targetPath),
+      newTargetPaths: created.map((file) => file.targetPath),
+      mods: new Set(preflight.files.map((file) => file.modUniqueId)).size,
+    };
+  }
+
   async function requestExport(mod = selectedMod) {
     if (!mod || exportPreflightRef.current.activeRequestId !== null) return;
     const requestId = ++exportPreflightRef.current.nextRequestId;
     exportPreflightRef.current.activeRequestId = requestId;
-    const existingFiles = mod.i18nFiles.filter((file) => file.targetExists);
-    const newFiles = mod.i18nFiles.filter((file) => !file.targetExists);
     setCheckingExportReadiness(true);
     setExporting(true);
     try {
@@ -1675,12 +1691,13 @@ export function App() {
         },
       ]);
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      const planned = plannedTargets(preflight);
       setExportConfirm({
         kind: "selected",
         modUniqueId: mod.uniqueId,
         title: mod.name,
-        existingFiles: existingFiles.length,
-        newFiles: newFiles.length,
+        existingFiles: planned.existingFiles,
+        newFiles: planned.newFiles,
         mods: null,
         willWrite: Math.max(0, mod.translatedKeys - preflight.omitted.length),
         openOmitted: Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
@@ -1688,8 +1705,8 @@ export function App() {
         reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
         acceptedMismatches: preflight.acceptedMismatches,
         omitted: preflight.omitted,
-        existingTargetPaths: existingFiles.map((file) => file.targetPath),
-        newTargetPaths: newFiles.map((file) => file.targetPath),
+        existingTargetPaths: planned.existingTargetPaths,
+        newTargetPaths: planned.newTargetPaths,
       });
     } catch (error) {
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
@@ -1712,9 +1729,6 @@ export function App() {
     const requestId = ++exportPreflightRef.current.nextRequestId;
     exportPreflightRef.current.activeRequestId = requestId;
     const affected = scan.mods.filter((mod) => mod.i18nFiles.length > 0);
-    const targetFiles = affected.flatMap((mod) => mod.i18nFiles);
-    const existingFiles = targetFiles.filter((file) => file.targetExists);
-    const newFiles = targetFiles.filter((file) => !file.targetExists);
     const statusCountsKnown = affected.every((mod) => mod.statusCounts != null);
     setCheckingExportReadiness(true);
     setExporting(true);
@@ -1727,13 +1741,14 @@ export function App() {
         })),
       );
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      const planned = plannedTargets(preflight);
       setExportConfirm({
         kind: "all",
         modUniqueId: null,
         title: "All mods",
-        existingFiles: existingFiles.length,
-        newFiles: newFiles.length,
-        mods: affected.length,
+        existingFiles: planned.existingFiles,
+        newFiles: planned.newFiles,
+        mods: planned.mods,
         willWrite: Math.max(
           0,
           affected.reduce((sum, mod) => sum + mod.translatedKeys, 0) -
@@ -1756,8 +1771,8 @@ export function App() {
         ),
         acceptedMismatches: preflight.acceptedMismatches,
         omitted: preflight.omitted,
-        existingTargetPaths: existingFiles.map((file) => file.targetPath),
-        newTargetPaths: newFiles.map((file) => file.targetPath),
+        existingTargetPaths: planned.existingTargetPaths,
+        newTargetPaths: planned.newTargetPaths,
       });
     } catch (error) {
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
