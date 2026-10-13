@@ -181,7 +181,8 @@ function presentationFor(
             : `${entry.title} · failed`;
     // Exported files are named relative to the Mods folder and files saved
     // elsewhere by name only; the full path stays for Open folder.
-    const shownPath = entry.shownPath ?? entry.path;
+    const shownPath =
+      entry.shownPath ?? (entry.fileName ? undefined : entry.path);
     const pathDetails: ResultPath[] = [
       ...(entry.fileName ? [{ label: "File name", path: entry.fileName }] : []),
       ...(shownPath && shownPath !== entry.fileName
@@ -379,9 +380,8 @@ function presentationFor(
       data.sourceFileName ||
       (data.sourcePath ? fileNameOf(data.sourcePath) : null);
     const paths: ResultPath[] = [];
+    // The name only; Show source file still opens the full path.
     if (sourceName) paths.push({ label: "Source file", path: sourceName });
-    if (data.sourcePath)
-      paths.push({ label: "Imported from", path: data.sourcePath });
     const notices: ResultNotice[] = [];
     if (summary?.skippedTranslated)
       notices.push({

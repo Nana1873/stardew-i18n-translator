@@ -4665,7 +4665,8 @@ describe("App shell", () => {
     const result = await inspectLatestResult();
     expect(result).toHaveTextContent("1 of 1 text added to Review");
     expect(result).toHaveTextContent("test.llm-result.json");
-    expect(result).toHaveTextContent("C:/results/test.llm-result.json");
+    // The user's own folders are not shown; Show source file still uses them.
+    expect(result).not.toHaveTextContent("C:/results/");
     fireEvent.click(
       within(result).getByRole("button", { name: "Open Review" }),
     );

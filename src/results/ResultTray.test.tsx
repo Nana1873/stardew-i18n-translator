@@ -565,7 +565,8 @@ describe("ResultTray", () => {
     expect(screen.getByText(selected.summary)).toBeVisible();
     expect(screen.getByText(selected.warnings[0])).toBeVisible();
     expect(screen.getByText("result.json")).toBeVisible();
-    expect(screen.getByText("C:/in/result.json")).toBeVisible();
+    // A file outside Mods is named only; Show file still opens its path.
+    expect(screen.queryByText("C:/in/result.json")).toBeNull();
     expect(screen.getByText("18")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy details" }));
@@ -575,7 +576,7 @@ describe("ResultTray", () => {
     expect(copied).toContain("18 suggestions saved in Review.");
     expect(copied).toContain("2 existing translations were preserved.");
     expect(copied).toContain("File name\nresult.json");
-    expect(copied).toContain("Path\nC:/in/result.json");
+    expect(copied).not.toContain("C:/in/");
     expect(copied).toContain("Imported\n18");
     expect(onNotify).toHaveBeenCalledWith("Result details copied.");
 
@@ -635,9 +636,7 @@ describe("ResultTray", () => {
     );
 
     expect(screen.getByText("Meadow.de.llm-result.json")).toBeInTheDocument();
-    expect(
-      screen.getByText("C:\\Temp\\Meadow.de.llm-result.json"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/C:\\Temp/)).toBeNull();
     expect(
       screen.getByText(/18 of 21 texts added to Review/),
     ).toBeInTheDocument();

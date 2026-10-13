@@ -1231,9 +1231,10 @@ fn remember_llm_batch_import(
                 }
             ),
             item_count: summary.imported,
+            // The batch file is the user's own; name it without their folders.
+            shown_path: file_name.clone(),
             path,
             file_name,
-            shown_path: None,
             warnings,
             details: vec![
                 operation_detail("Component", mod_unique_id),

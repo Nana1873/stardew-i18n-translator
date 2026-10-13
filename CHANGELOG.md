@@ -336,13 +336,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   out, instead of being treated as a slow model.
 - A dialogue command typed in the wrong letter case, such as `#$B#` instead of
   `#$b#`, is now explained as one problem: the game does not know it and
-  shows it as text, followed by "Did you mean #$b#?". Before, the editor and
+  shows it as text, followed by "Did you mean #$b#?" when `#$b#` is missing.
+  Before, the editor and
   the export named it as an extra command the dialogue needs and the correct
   one as missing.
 - The export result and the Activity log name written translation files
   relative to the Mods folder, such as `Mods/[CP] MrGinger/i18n/de.json`,
   instead of the full path with your user folder. ZIPs and LLM batch files
-  saved elsewhere are named by their file name only. **Open folder** and
+  saved or imported from elsewhere are named by their file name only. **Open folder** and
   **Show file** still open the right place.
 
 ## [2.4.0] - 2026-10-11
