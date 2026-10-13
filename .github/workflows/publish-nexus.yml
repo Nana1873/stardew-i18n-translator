@@ -116,6 +116,11 @@ jobs:
                 | tr '\r\n' '  ' | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//'
             )"
           fi
+          # Older tags kept a longer Markdown summary there; Nexus file
+          # descriptions hold 255 characters and show no Markdown.
+          if (( ${#summary} > 160 )) || [[ "$summary" =~ ^[-*#] ]]; then
+            summary=""
+          fi
           if [[ -z "$summary" ]]; then
             summary="Stardew i18n Translator $version"
           fi

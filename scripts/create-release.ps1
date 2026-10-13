@@ -190,6 +190,9 @@ try {
         $summary = $summary -replace "(?<!\n)\n(?!\n)", " "
         # Nexus file descriptions hold 255 characters, including the link
         # to the full changelog that the upload workflow appends.
+        if ($summary -match '^[-*#]') {
+            throw "Release summary must be plain sentences, not Markdown: $summaryPath"
+        }
         if ($summary.Length -gt 160) {
             throw "Release summary is $($summary.Length) characters; keep it at 160 or less: $summaryPath"
         }
