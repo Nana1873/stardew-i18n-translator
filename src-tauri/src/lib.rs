@@ -4283,6 +4283,25 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn a_connect_timeout_reads_as_unreachable_and_stops_the_run() {
+        let url = "http://127.0.0.1:1234/v1/chat/completions";
+        let unused = || unreachable!("connect and timeout failures have their own text");
+        // A server that is not running can fail with a connect timeout.
+        let dead = llm::chat_send_failure(url, true, true, unused);
+        assert_eq!(dead, llm::connection_failure_message(url));
+        assert_eq!(local_ai_error_category(&dead), "unreachable");
+        assert!(local_ai_error_is_systemic(local_ai_error_category(&dead)));
+
+        let slow = llm::chat_send_failure(url, false, true, unused);
+        assert_eq!(local_ai_error_category(&slow), "timeout");
+        assert!(!local_ai_error_is_systemic("timeout"));
+        assert_eq!(
+            llm::chat_send_failure(url, false, false, || "Other".to_string()),
+            "Other"
+        );
+    }
+
+    #[test]
     fn chatgpt_run_started_logs_the_cleaned_model_name() {
         let event = cloud_run_started_diagnostic("run-1", "gpt-5.6-sol", "medium", 3, 1);
         assert_eq!(event["event"], "run_started");

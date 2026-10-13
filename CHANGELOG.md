@@ -331,6 +331,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - When ChatGPT refuses some texts, the batch is split right away instead of
   being sent again unchanged. A quality check that took too long or was
   refused now says so instead of reporting an invalid review response.
+- A Local AI server that is not running stops the run after the first attempt
+  with the "Could not reach Local AI" message, also when the connection times
+  out, instead of being treated as a slow model.
 
 ## [2.4.0] - 2026-10-11
 
