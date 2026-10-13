@@ -180,7 +180,10 @@ every variant strictly and stops on a broken one. Only the target language's
 own regional code counts, so `en-GB.json` is untouched. Successful JSON exports
 canonicalize to `i18n/<lang>.json`, back up and remove the regional file, and
 name it in the result tray and Activity log relative to the Mods folder.
-Translation ZIPs do not change or remove files in the Mods folder. Split
+Translation ZIPs never contain a regional file and do not change or remove
+files in the Mods folder. When the original mod still has one, the ZIP preview
+shows one plain, non-blocking line per mod naming it relative to the Mods
+folder and asking the user to delete it after installing the ZIP. Split
 document names are literal and do not trigger this language-filename
 migration. Existing targets, including omitted orphan keys, remain recoverable
 from their export backup.

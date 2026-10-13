@@ -122,8 +122,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   together with `de.json` for every language, as already done for `pt-BR.json`
   and `zh-CN.json`; the game prefers them over `de.json`. JSON exports back
   them up and remove them, and the result and Activity log now name each
-  removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs leave
-  them alone.
+  removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs never
+  include or remove them; when the original mod has one, the ZIP preview names
+  it and says to delete it after installing the ZIP.
 - A glossary built in Settings shows its hints in the editor right away,
   also when Settings is then closed without saving, instead of only after a
   restart.
