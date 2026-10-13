@@ -1565,7 +1565,7 @@ function GlossarySettings({
                 glossary is available. Translation and export still work fully.
               </span>
             </span>
-            <span className="translator-state is-review">Unavailable</span>
+            <span className="translator-state">Unavailable</span>
           </div>
         )}
 

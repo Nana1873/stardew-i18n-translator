@@ -59,7 +59,7 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - Opening Issues fits the columns to the window when saved widths would push
   the issue icons out of view.
 - The Settings Glossary page says that built glossaries are saved right away,
-  apart from Save changes, and shows source and cache status as readable
+  without Save changes, and shows source and cache status as readable
   chips.
 
 - Texts across the app are plainer: explanations, status lines, dialog text

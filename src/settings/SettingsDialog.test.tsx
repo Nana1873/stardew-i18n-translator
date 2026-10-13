@@ -897,12 +897,15 @@ describe("SettingsDialog", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
-    for (const label of ["Unavailable", "Outdated"]) {
-      const chip = await screen.findByText(label, {
-        selector: ".translator-setting-line > .translator-state",
-      });
-      expect(chip).toHaveClass("translator-state", "is-review");
-    }
+    const unavailable = await screen.findByText("Unavailable", {
+      selector: ".translator-setting-line > .translator-state",
+    });
+    // Translation still works fully, so this is a neutral note, not a warning.
+    expect(unavailable).not.toHaveClass("is-review");
+    const outdated = await screen.findByText("Outdated", {
+      selector: ".translator-setting-line > .translator-state",
+    });
+    expect(outdated).toHaveClass("translator-state", "is-review");
     expect(
       screen.queryByText("Built glossaries are saved right away."),
     ).toBeNull();
