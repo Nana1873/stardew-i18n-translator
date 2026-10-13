@@ -326,6 +326,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   no longer stops on it and keeps a backup when replacing or removing it.
 - The editor explains several token problems of one string in the same order
   as the export result.
+- Cancel right after starting an AI translation of one string now stops it;
+  before, the run could still finish.
 
 ## [2.4.0] - 2026-10-11
 
