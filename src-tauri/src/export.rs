@@ -51,6 +51,9 @@ pub struct SkippedKey {
 pub struct ExportFileResult {
     pub relative_dir: String,
     pub target_path: String,
+    /// The target relative to the Mods folder (`Mods/<Mod>/i18n/de.json`) for
+    /// messages; filled in by [`show_relative_paths`].
+    pub shown_path: String,
     /// The target file was (re)written.
     pub written: bool,
     /// Every translation was cleared, so the now-stale target file was removed
@@ -85,7 +88,7 @@ pub struct ExportFileResult {
 pub struct RemovedRegionalFile {
     pub path: String,
     /// The same file relative to the Mods folder (`Mods/<Mod>/i18n/de-DE.json`)
-    /// for messages; filled in by [`show_removed_regional_files`].
+    /// for messages; filled in by [`show_relative_paths`].
     pub shown_path: String,
     /// A `<file>.bak` backup was made before removing it.
     pub backed_up: bool,
@@ -124,29 +127,33 @@ fn target_name_of(path: &str) -> String {
     }
 }
 
-/// Name removed regional files relative to the Mods folder, so messages do not
-/// carry the user's folder layout.
-pub fn show_removed_regional_files(files: &mut [ExportFileResult], mods_root: &Path) {
+/// Name written, removed, and regional files relative to the Mods folder, so
+/// the result and the Activity log do not carry the user's folder layout.
+pub fn show_relative_paths(files: &mut [ExportFileResult], mods_root: &Path) {
     let canonical_root = std::fs::canonicalize(mods_root).ok();
-    for removed in files
-        .iter_mut()
-        .flat_map(|file| file.removed_regional_files.iter_mut())
-    {
-        let path = Path::new(&removed.path);
-        // The file is gone, so canonicalize its folder to match a canonical root.
+    let relative = |path: &str| {
+        let path = Path::new(path);
+        // The file may be gone, so canonicalize its folder to match a
+        // canonical root.
         let canonical = path
             .parent()
             .and_then(|parent| std::fs::canonicalize(parent).ok())
             .zip(path.file_name())
             .map(|(parent, name)| parent.join(name));
-        removed.shown_path = match (&canonical_root, canonical) {
+        match (&canonical_root, canonical) {
             (Some(root), Some(canonical))
                 if !path.starts_with(mods_root) && canonical.starts_with(root) =>
             {
                 shown_path(&canonical, root)
             }
             _ => shown_path(path, mods_root),
-        };
+        }
+    };
+    for file in files {
+        file.shown_path = relative(&file.target_path);
+        for removed in &mut file.removed_regional_files {
+            removed.shown_path = relative(&removed.path);
+        }
     }
 }
 
@@ -2514,7 +2521,7 @@ mod tests {
             assert!(read(&i18n.join("en-GB.json")).contains("Unrelated"));
             assert!(!i18n.join("en-GB.json.bak").exists());
 
-            show_removed_regional_files(&mut result.files, &root);
+            show_relative_paths(&mut result.files, &root);
             let removed = &result.files[0].removed_regional_files;
             assert_eq!(removed.len(), 1);
             assert_eq!(removed[0].path, i18n.join(regional).display().to_string());
@@ -2624,8 +2631,17 @@ mod tests {
 
         let mut result = export_all_mods(&root, &mods).unwrap();
         for exported in &mut result.mods {
-            show_removed_regional_files(&mut exported.result.files, &mods_root);
+            show_relative_paths(&mut exported.result.files, &mods_root);
         }
+        // The written file is named relative to the Mods folder too.
+        assert_eq!(
+            result.mods[0].result.files[0].shown_path,
+            "Mods/First/i18n/de.json"
+        );
+        assert_eq!(
+            result.mods[1].result.files[0].shown_path,
+            "Mods/Second/i18n/de.json"
+        );
         let first_removed = &result.mods[0].result.files[0].removed_regional_files;
         assert_eq!(first_removed.len(), 1);
         assert_eq!(first_removed[0].shown_path, "Mods/First/i18n/de-DE.json");
@@ -2671,7 +2687,7 @@ mod tests {
         assert!(read(&i18n.join("de-DE/Dialogue.json.bak")).contains("Hallo neu"));
         assert!(read(&i18n.join("de-DE/Events.json.bak")).contains("Los"));
 
-        show_removed_regional_files(&mut result.files, &root);
+        show_relative_paths(&mut result.files, &root);
         let removed = &result.files[0].removed_regional_files;
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0].shown_path, "Mods/i18n/de-DE/Dialogue.json");

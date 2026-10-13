@@ -179,9 +179,14 @@ function presentationFor(
           : entry.outcome === "cancelled"
             ? `${entry.title} · cancelled`
             : `${entry.title} · failed`;
+    // Exported files are named relative to the Mods folder and files saved
+    // elsewhere by name only; the full path stays for Open folder.
+    const shownPath = entry.shownPath ?? entry.path;
     const pathDetails: ResultPath[] = [
       ...(entry.fileName ? [{ label: "File name", path: entry.fileName }] : []),
-      ...(entry.path ? [{ label: "Path", path: entry.path }] : []),
+      ...(shownPath && shownPath !== entry.fileName
+        ? [{ label: "Path", path: shownPath }]
+        : []),
       ...entry.details.map((detail) => ({
         label: detail.label,
         path: detail.value,
@@ -305,23 +310,23 @@ function presentationFor(
           tone: "warning",
         });
     }
-    const paths =
-      exportResult?.files
-        .filter((file) => file.written || file.removed)
-        .map((file) => ({
-          label:
-            fileNameOf(file.targetPath) +
-            (file.removed
-              ? file.backedUp
-                ? " · Removed · backup created"
-                : " · Removed"
-              : file.unchanged
-                ? " · Unchanged"
-                : file.backedUp
-                  ? " · Written · backup created"
-                  : " · Written"),
-          path: file.targetPath,
-        })) ?? [];
+    const changed =
+      exportResult?.files.filter((file) => file.written || file.removed) ?? [];
+    // Shown relative to the Mods folder; Open folder uses the full path.
+    const paths = changed.map((file) => ({
+      label:
+        fileNameOf(file.targetPath) +
+        (file.removed
+          ? file.backedUp
+            ? " · Removed · backup created"
+            : " · Removed"
+          : file.unchanged
+            ? " · Unchanged"
+            : file.backedUp
+              ? " · Written · backup created"
+              : " · Written"),
+      path: file.shownPath ?? fileNameOf(file.targetPath),
+    }));
     const copy = exportResult
       ? changedFiles === 0
         ? "No translation file was changed."
@@ -349,7 +354,7 @@ function presentationFor(
       notices,
       paths,
       workflow: [],
-      openFolderPath: paths[0] ? folderOf(paths[0].path) : null,
+      openFolderPath: changed[0] ? folderOf(changed[0].targetPath) : null,
       canOpenReview: Boolean(
         exportResult &&
         exportResult.totalReviewNeeded + exportResult.totalOutdated > 0,
@@ -443,11 +448,9 @@ function presentationFor(
     };
   } else if (data.kind === "batch-export") {
     const outcome = data.outcome;
+    // Saved outside the Mods folder: the name only; Open folder uses the path.
     const paths: ResultPath[] = outcome
-      ? [
-          { label: "File name", path: fileNameOf(outcome.path) },
-          { label: "Saved to", path: outcome.path },
-        ]
+      ? [{ label: "File name", path: fileNameOf(outcome.path) }]
       : [];
     result = {
       label: "LLM batch exported",
@@ -511,12 +514,8 @@ function presentationFor(
               : []),
           ]
         : [],
-      paths: outcome
-        ? [
-            { label: "Archive name", path: outcome.fileName },
-            { label: "Saved to", path: outcome.path },
-          ]
-        : [],
+      // ZIPs are saved outside the game and Mods folders: the name only.
+      paths: outcome ? [{ label: "Archive name", path: outcome.fileName }] : [],
       workflow: [],
       openFolderPath: outcome?.folder ?? null,
       canOpenReview: false,

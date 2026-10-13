@@ -265,7 +265,8 @@ describe("ResultTray", () => {
 
     expect(screen.getByText("LLM batch exported")).toBeInTheDocument();
     expect(screen.getByText("test.llm-batch.json")).toBeInTheDocument();
-    expect(screen.getByText("C:/out/test.llm-batch.json")).toBeInTheDocument();
+    // The user's folder layout is not shown; Open folder still uses it.
+    expect(screen.queryByText("C:/out/test.llm-batch.json")).toBeNull();
     expect(screen.getByText(LLM_BATCH_HANDOFF_PROMPT)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Show workflow"));
     expect(
@@ -604,7 +605,7 @@ describe("ResultTray", () => {
     const copied = writeText.mock.calls[0][0] as string;
     expect(copied).toContain("ZIP created");
     expect(copied).toContain("Test.zip");
-    expect(copied).toContain("C:/release/Test.zip");
+    expect(copied).not.toContain("C:/release");
     expect(copied).toContain("804 strings");
   });
 
@@ -676,6 +677,107 @@ describe("ResultTray", () => {
         }),
       ).toBeNull(),
     );
+  });
+
+  it("shows written files relative to the Mods folder and opens the real folder", () => {
+    const openFolder = vi.fn();
+    renderTray(
+      {
+        ...exportData,
+        problems: [],
+        result: {
+          ...exportData.result!,
+          files: [
+            {
+              relativeDir: "i18n",
+              targetPath:
+                "C:\\Users\\Someone\\Mods\\[CP] MrGinger\\i18n\\de.json",
+              shownPath: "Mods/[CP] MrGinger/i18n/de.json",
+              written: true,
+              removed: false,
+              backedUp: true,
+              writtenKeys: 3,
+              untranslated: 0,
+              outdated: 0,
+              reviewNeeded: 0,
+              orphanKeys: [],
+            },
+          ],
+          filesWritten: 1,
+          totalWrittenKeys: 3,
+          totalUntranslated: 0,
+        },
+      },
+      { onOpenFolder: openFolder },
+    );
+
+    expect(
+      screen.getByText("Mods/[CP] MrGinger/i18n/de.json"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/C:\\Users/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(openFolder).toHaveBeenCalledWith(
+      "C:\\Users\\Someone\\Mods\\[CP] MrGinger\\i18n",
+    );
+  });
+
+  it("shows an earlier export by its Mods-relative path", () => {
+    const openFolder = vi.fn();
+    const entry = historyEntry({
+      path: "C:/Users/Someone/Mods/[CP] MrGinger/i18n/de.json",
+      fileName: "de.json",
+      shownPath: "Mods/[CP] MrGinger/i18n/de.json",
+    });
+    renderTray(
+      {
+        kind: "history",
+        title: entry.title,
+        collapsed: false,
+        pending: false,
+        error: null,
+        problems: [],
+        entry,
+      },
+      {
+        history: [entry],
+        selectedHistoryId: entry.id,
+        onOpenFolder: openFolder,
+      },
+    );
+
+    expect(
+      screen.getByText("Mods/[CP] MrGinger/i18n/de.json"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/C:\/Users/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show file" }));
+    expect(openFolder).toHaveBeenCalledWith(
+      "C:/Users/Someone/Mods/[CP] MrGinger/i18n",
+    );
+  });
+
+  it("names an earlier ZIP by its file name only", () => {
+    const entry = historyEntry({
+      kind: "zip",
+      title: "Translation ZIP created",
+      path: "C:/Users/Someone/Desktop/MrGinger-de.zip",
+      fileName: "MrGinger-de.zip",
+      shownPath: "MrGinger-de.zip",
+    });
+    renderTray(
+      {
+        kind: "history",
+        title: entry.title,
+        collapsed: false,
+        pending: false,
+        error: null,
+        problems: [],
+        entry,
+      },
+      { history: [entry], selectedHistoryId: entry.id },
+    );
+
+    expect(screen.getByText("MrGinger-de.zip")).toBeInTheDocument();
+    expect(screen.queryByText(/C:\/Users/)).toBeNull();
   });
 
   it("keeps ZIP follow-up actions in the compact action style", () => {
