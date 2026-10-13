@@ -32,9 +32,9 @@ const SETUP_STEPS: Array<{
   description: string;
 }> = [
   { number: 1, title: "Game folder", description: "Find Stardew Valley" },
-  { number: 2, title: "Mods folder", description: "Choose what to scan" },
-  { number: 3, title: "Languages", description: "Set your translation pair" },
-  { number: 4, title: "Glossary", description: "Add official term hints" },
+  { number: 2, title: "Mods folder", description: "Where your mods are" },
+  { number: 3, title: "Languages", description: "Pick your language" },
+  { number: 4, title: "Glossary", description: "Official names as hints" },
 ];
 
 interface SetupWizardProps {
@@ -304,7 +304,7 @@ export function SetupWizard({
                 <StepHeading
                   eyebrow="Step 1"
                   title="Find your game"
-                  description="We use the game folder to locate your Mods folder and, optionally, build official translation hints."
+                  description="The app uses the game folder to find your Mods folder and, if you like, to build a glossary of the game's official names."
                 />
                 <div className="wizard__row">
                   <button
@@ -332,12 +332,12 @@ export function SetupWizard({
                 <StepHeading
                   eyebrow="Step 2"
                   title="Choose your Mods folder"
-                  description="This is the folder the app scans for translatable i18n files."
+                  description="The app looks in this folder for mods with translation files."
                 />
                 <div className="setup__note">
-                  The recommended location is{" "}
-                  <code>&lt;Stardew Valley&gt;/Mods</code>. Change it only when
-                  your mods are stored elsewhere.
+                  Usually this is <code>&lt;Stardew Valley&gt;/Mods</code>.
+                  Change it if your mods live elsewhere, for example in Mod
+                  Organizer 2&apos;s mods folder.
                 </div>
                 <div className="wizard__row">
                   <button type="button" onClick={browseMods} disabled={busy}>
@@ -364,7 +364,7 @@ export function SetupWizard({
                   <label className="wizard__field setup__language-card">
                     <span>Source language</span>
                     <input type="text" value={SOURCE_LANGUAGE_LABEL} disabled />
-                    <small>Fixed by the Stardew i18n format</small>
+                    <small>Mods are written in English</small>
                   </label>
                   <label className="wizard__field setup__language-card">
                     <span>Target language</span>
@@ -376,11 +376,24 @@ export function SetupWizard({
                       <option value="" disabled>
                         Choose a language…
                       </option>
-                      {TARGET_LANGUAGES.map((language) => (
-                        <option key={language.code} value={language.code}>
-                          {language.label}
-                        </option>
-                      ))}
+                      <optgroup label="In the game">
+                        {TARGET_LANGUAGES.filter((language) =>
+                          gameSupportsLanguage(language.code),
+                        ).map((language) => (
+                          <option key={language.code} value={language.code}>
+                            {language.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Needs a language mod in the game">
+                        {TARGET_LANGUAGES.filter(
+                          (language) => !gameSupportsLanguage(language.code),
+                        ).map((language) => (
+                          <option key={language.code} value={language.code}>
+                            {language.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                     <small>Used for imports, exports, and glossary hints</small>
                   </label>
@@ -392,7 +405,7 @@ export function SetupWizard({
               <section aria-label="Glossary">
                 <StepHeading
                   eyebrow="Step 4 / Optional"
-                  title="Add official translation hints"
+                  title="Add a glossary"
                   description="A local glossary helps you use Stardew Valley's official names for items, characters, places, seasons, and UI terms."
                 />
 
@@ -444,10 +457,10 @@ export function SetupWizard({
                     (targetLang &&
                       !gameSupportsLanguage(targetLang) &&
                       !glossary.packAvailable)) ? (
-                  <StatusCard tone="ready" title="Cached glossary available">
-                    {glossary.cached.termCount} cached terms remain available.
-                    The game’s Content/Strings files are needed only to rebuild
-                    them.
+                  <StatusCard tone="ready" title="Glossary ready">
+                    {glossary.cached.termCount} official names are ready.
+                    Rebuilding them needs the game&apos;s text files, which
+                    weren&apos;t found.
                   </StatusCard>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
                   glossary.packAvailable && glossary.sourceAvailable ? (
@@ -478,13 +491,13 @@ export function SetupWizard({
                   ) : glossary.packAvailable ? (
                     <StatusCard
                       tone="neutral"
-                      title="No usable glossary source"
+                      title="Glossary can't be built yet"
                     >
                       A community language pack
                       {glossary.packName ? ` (${glossary.packName})` : ""} was
-                      detected, but the game’s Content/Strings files with the
-                      English names were not found. Check the Stardew Valley
-                      folder, or finish setup without building a glossary.
+                      found, but the game&apos;s text files with the English
+                      names (Content/Strings) were not. Check the Stardew Valley
+                      folder, or finish setup without a glossary.
                     </StatusCard>
                   ) : (
                     <StatusCard
@@ -498,11 +511,16 @@ export function SetupWizard({
                 ) : glossary.sourceAvailable ? (
                   <StatusCard
                     tone="ready"
-                    title="Everything is ready"
+                    title={
+                      glossary.outdatedCache
+                        ? "Rebuild your glossary"
+                        : glossary.cached
+                          ? "Glossary ready"
+                          : "Glossary can be built"
+                    }
                     action={
                       <button
                         type="button"
-                        className="wizard__primary"
                         onClick={handleBuildGlossary}
                         disabled={glossaryBuilding || !targetLang}
                       >
@@ -515,10 +533,10 @@ export function SetupWizard({
                     }
                   >
                     {glossary.outdatedCache
-                      ? "An older glossary from a previous version was found — rebuild recommended."
+                      ? "Your glossary is from an older version of the app. Rebuild it to get hints again."
                       : glossary.cached
-                        ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
-                        : "Game Strings were found. Building usually takes only a moment."}
+                        ? `Your glossary has ${glossary.cached.termCount} official names. Rebuild it after a game update.`
+                        : "The game's text files were found. Building takes only a moment."}
                   </StatusCard>
                 ) : (
                   <StatusCard
@@ -529,15 +547,15 @@ export function SetupWizard({
                     }
                     title={
                       glossary.cached && !glossary.outdatedCache
-                        ? "Cached glossary available"
-                        : "Glossary source unavailable"
+                        ? "Glossary ready"
+                        : "Glossary can't be built yet"
                     }
                   >
                     {glossary.cached && !glossary.outdatedCache
-                      ? `${glossary.cached.termCount} cached terms remain available. The game’s Content/Strings files are needed only to rebuild them.`
+                      ? `${glossary.cached.termCount} official names are ready. Rebuilding them needs the game's text files, which weren't found.`
                       : glossary.outdatedCache
-                        ? "The cached glossary needs a rebuild, but the game’s Content/Strings files were not found. Check the Stardew Valley folder, or finish setup and rebuild later."
-                        : "The game’s Content/Strings files were not found. Check the Stardew Valley folder, or finish setup without a glossary and build it later in Settings."}
+                        ? "Your glossary is from an older version of the app, and the game's text files (Content/Strings) were not found to rebuild it. Check the Stardew Valley folder, or finish setup and rebuild later in Settings."
+                        : "The game's text files (Content/Strings) were not found. Check the Stardew Valley folder, or finish setup and build the glossary later in Settings."}
                   </StatusCard>
                 )}
               </section>

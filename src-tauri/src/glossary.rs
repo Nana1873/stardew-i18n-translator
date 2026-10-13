@@ -722,6 +722,13 @@ pub fn legacy_cache_present(config_dir: &Path) -> bool {
     legacy_glossary_path(config_dir).is_file()
 }
 
+/// Remove a legacy single-file `glossary.json`. Call after
+/// [`migrate_legacy_cache`], when only an unmigratable leftover can remain, and
+/// only once a current glossary was built, so nothing usable is lost.
+pub fn remove_legacy_cache(config_dir: &Path) {
+    let _ = std::fs::remove_file(legacy_glossary_path(config_dir));
+}
+
 pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
     let path = glossary_path(config_dir, &glossary.target_lang)
         .ok_or_else(|| format!("Invalid target language: {}", glossary.target_lang))?;
@@ -1682,6 +1689,10 @@ mod tests {
 
         assert!(legacy_cache_present(&dir));
         assert_eq!(load(&dir, "de"), None);
+
+        // A rebuild replaces the leftover, so the rebuild note goes away.
+        remove_legacy_cache(&dir);
+        assert!(!legacy_cache_present(&dir));
 
         std::fs::remove_dir_all(&dir).ok();
     }

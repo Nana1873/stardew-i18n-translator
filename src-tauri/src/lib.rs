@@ -1496,6 +1496,9 @@ fn build_glossary(
         |error| log::error!(target: "app", "build_glossary({target_lang}) failed: {error}"),
     )?;
     glossary::save(&config, &built)?;
+    // A rebuilt glossary replaces any unmigratable pre-1.4 `glossary.json`.
+    glossary::migrate_legacy_cache(&config);
+    glossary::remove_legacy_cache(&config);
     Ok(glossary::GlossaryInfo::of(&built))
 }
 
@@ -1523,7 +1526,9 @@ fn glossary_status(
         load_active_glossary(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
-    let outdated_cache = glossary::legacy_cache_present(&config);
+    // It only needs a rebuild while this language has no current glossary;
+    // otherwise the note would never go away.
+    let outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
