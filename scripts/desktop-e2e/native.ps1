@@ -133,9 +133,22 @@ if ($Action -eq 'pick' -or $savePath) {
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1001')),
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'Edit'))
         )
-        $field = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
-        if ($null -eq $field) { throw 'The native Save filename control is unavailable.' }
-        $value = $field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+        # Right after the dialog opens, the field can exist without its
+        # ValuePattern yet ("Unsupported pattern"). Retry briefly before failing.
+        $value = $null
+        $deadline = (Get-Date).AddSeconds(5)
+        do {
+            $field = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            if ($null -ne $field) {
+                try {
+                    $value = $field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+                } catch [System.InvalidOperationException] {
+                    $value = $null
+                }
+            }
+            if ($null -eq $value) { Start-Sleep -Milliseconds 100 }
+        } while ($null -eq $value -and (Get-Date) -lt $deadline)
+        if ($null -eq $value) { throw 'The native Save filename control is unavailable.' }
         $value.SetValue($Path)
         if ($value.Current.Value -ne $Path) { throw 'The native Save filename did not update.' }
     } elseif ($edit -eq [IntPtr]::Zero) { throw 'The common dialog path control (1152/1148) is unavailable.' }
