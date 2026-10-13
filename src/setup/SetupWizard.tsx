@@ -91,6 +91,7 @@ export function SetupWizard({
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
   const [glossaryError, setGlossaryError] = useState<string | null>(null);
   const autoBuildKey = useRef<string | null>(null);
+  const buildRequest = useRef<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const hasChanges =
@@ -159,10 +160,14 @@ export function SetupWizard({
   }, [step, stardewPath, targetLang, glossary, glossaryBuilding]);
 
   async function handleBuildGlossary() {
+    const request = `${stardewPath}|${targetLang}`;
+    buildRequest.current = request;
     setGlossaryBuilding(true);
     setGlossaryError(null);
     try {
       const info = await buildGlossary(stardewPath, targetLang);
+      // The user went back and chose another folder or language meanwhile.
+      if (buildRequest.current !== request) return;
       setGlossary((previous) => ({
         gameXnbPresent: previous?.gameXnbPresent ?? false,
         sourceAvailable: previous?.sourceAvailable ?? true,
@@ -173,7 +178,7 @@ export function SetupWizard({
         packName: previous?.packName,
       }));
     } catch (cause) {
-      setGlossaryError(String(cause));
+      if (buildRequest.current === request) setGlossaryError(String(cause));
     } finally {
       setGlossaryBuilding(false);
     }
@@ -332,6 +337,9 @@ export function SetupWizard({
                   <span>
                     <strong>{item.title}</strong>
                     <small>{item.description}</small>
+                    {state === "complete" && (
+                      <span className="translator-sr-only">Done</span>
+                    )}
                   </span>
                 </li>
               );

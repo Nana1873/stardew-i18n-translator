@@ -1917,8 +1917,15 @@
   gap: 6px;
 }
 
-#stardew-i18n-translator .translator-setup-problem {
+#stardew-i18n-translator .translator-setting-copy .translator-setup-problem {
   color: var(--translator-red);
+}
+
+/* Long folder paths, such as an MO2 mods folder, wrap instead of running
+   under the buttons. */
+#stardew-i18n-translator .translator-setup-dialog .translator-setting-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #stardew-i18n-translator .translator-setup-foot {

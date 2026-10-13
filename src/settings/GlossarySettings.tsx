@@ -228,7 +228,6 @@ export function GlossarySettings({
           {error}
         </p>
       )}
-      {false}
     </section>
   );
 }
