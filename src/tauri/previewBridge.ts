@@ -411,6 +411,7 @@ function zipPreview(packageName: string, ids: string[]): ZipPreview {
     omittedComponents: [],
     warnings: [],
     problems,
+    regionalFileHints: [],
     totalStrings: total,
     totalSourceStrings: totalSource,
   };

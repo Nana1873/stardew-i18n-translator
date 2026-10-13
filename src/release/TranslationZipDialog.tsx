@@ -326,6 +326,14 @@ export function TranslationZipDialog({
                 </p>
               )}
 
+              {(preview.regionalFileHints?.length ?? 0) > 0 && (
+                <div className="translator-flow-callout translator-zip-regional-hints">
+                  {preview.regionalFileHints?.map((hint) => (
+                    <p key={hint}>{hint}</p>
+                  ))}
+                </div>
+              )}
+
               {displayedZipWarnings.length > 0 && (
                 <div className="translator-flow-callout is-warning translator-zip-warnings">
                   <AlertTriangle aria-hidden="true" />

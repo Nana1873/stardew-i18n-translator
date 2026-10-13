@@ -500,6 +500,9 @@ export interface ZipPreview {
   omittedComponents: string[];
   warnings: string[];
   problems: ZipProblem[];
+  /** One plain line per mod whose original folder still has a regional file
+   * such as `i18n/de-DE.json`, which the game prefers over the ZIP's file. */
+  regionalFileHints?: string[];
   totalStrings: number;
   totalSourceStrings: number;
 }
