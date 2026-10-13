@@ -833,7 +833,9 @@ describe("SettingsDialog", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
-    expect(await screen.findByText(/rebuild recommended/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Rebuild it to\s+get hints again/i),
+    ).toBeInTheDocument();
   });
 
   it("offers Build for a game-supported language with game Strings", async () => {
@@ -962,7 +964,7 @@ describe("SettingsDialog", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
       expect(await screen.findByText("1,185")).toBeInTheDocument();
       expect(
-        screen.getByText(/Stored locally · not included in a release/),
+        screen.getByText(/Stored on your PC · rebuild it after a game update/),
       ).toBeInTheDocument();
       expect(screen.queryByText("1.185")).toBeNull();
     } finally {
@@ -1016,11 +1018,9 @@ describe("SettingsDialog", () => {
         />,
       );
       fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
-      expect(
-        await screen.findByText("Cached glossary available"),
-      ).toBeVisible();
+      expect(await screen.findByText("Glossary ready")).toBeVisible();
       expect(screen.getByText("Rebuild source")).toBeVisible();
-      expect(screen.getByText(/Cached terms remain available/)).toBeVisible();
+      expect(screen.getByText(/Your glossary stays available/)).toBeVisible();
       expect(
         screen.queryByText(/Installed community language pack/),
       ).toBeNull();
