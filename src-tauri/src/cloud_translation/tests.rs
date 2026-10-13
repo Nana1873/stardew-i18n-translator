@@ -236,7 +236,7 @@ fn a_timed_out_attempt_is_split_without_a_same_size_retry() {
 }
 
 #[test]
-fn a_refusal_is_retried_once_without_a_validator_hint() {
+fn a_refusal_is_split_without_a_same_size_retry() {
     let mut hints = Vec::new();
     let result = tauri::async_runtime::block_on(translate_chunk_with_recovery(
         Arc::new(AtomicBool::new(false)),
@@ -247,8 +247,14 @@ fn a_refusal_is_retried_once_without_a_validator_hint() {
             )))
         },
     ));
-    assert!(result.is_err());
-    assert_eq!(hints, vec![None, None]);
+    assert_eq!(
+        result,
+        Err(ProviderFailure::InvalidResponse(
+            super::super::REFUSAL_MESSAGE.into()
+        ))
+    );
+    // One attempt, without a validator hint.
+    assert_eq!(hints, vec![None]);
 }
 
 #[test]

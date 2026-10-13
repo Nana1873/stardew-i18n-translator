@@ -263,6 +263,42 @@ fn invalid_review_response_splits_the_plan_and_skips_only_the_bad_item() {
 }
 
 #[test]
+fn review_timeout_and_refusal_are_skipped_with_their_own_reason() {
+    for (message, reason) in [
+        (super::super::TIMEOUT_MESSAGE, ReviewSkipReason::Timeout),
+        (super::super::REFUSAL_MESSAGE, ReviewSkipReason::Refused),
+    ] {
+        let items = vec![item("item-0000", "First", 0)];
+        let drafts = vec![translation("item-0000", "Erster Entwurf")];
+        let plans = vec![ReviewPlan {
+            items: items.clone(),
+            drafts: drafts.clone(),
+        }];
+        let (progress, events) = recorder();
+        let mut calls = 0usize;
+        let reviewed = tauri::async_runtime::block_on(execute_review_plans(
+            &items,
+            &drafts,
+            plans,
+            Arc::new(AtomicBool::new(false)),
+            progress,
+            |_, _, _| {
+                calls += 1;
+                std::future::ready(Err::<Vec<ProviderTranslation>, _>(
+                    ProviderFailure::InvalidResponse(message.to_string()),
+                ))
+            },
+        ))
+        .unwrap();
+
+        // No same-size retry; the draft is kept.
+        assert_eq!(calls, 1);
+        assert_eq!(reviewed, drafts);
+        assert_eq!(skipped(&events.lock().unwrap()), vec![(1, reason)]);
+    }
+}
+
+#[test]
 fn failed_repairs_keep_translations_and_report_the_skipped_texts() {
     let mut parsnip = item("item-0000", "Parsnip for [FarmName]", 0);
     parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];

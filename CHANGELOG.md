@@ -328,6 +328,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   as the export result.
 - Cancel right after starting an AI translation of one string now stops it;
   before, the run could still finish.
+- When ChatGPT refuses some texts, the batch is split right away instead of
+  being sent again unchanged. A quality check that took too long or was
+  refused now says so instead of reporting an invalid review response.
 
 ## [2.4.0] - 2026-10-11
 

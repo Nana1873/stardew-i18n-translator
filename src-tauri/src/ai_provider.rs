@@ -68,6 +68,10 @@ pub(crate) enum ReviewSkipReason {
     Transient,
     /// A single-item review response stayed invalid after its structure retry.
     InvalidResponse,
+    /// A single-item review hit the time limit for one attempt.
+    Timeout,
+    /// The AI refused to review a single item.
+    Refused,
     /// The text is too long to send for a review; its draft is kept.
     TooLong,
 }
