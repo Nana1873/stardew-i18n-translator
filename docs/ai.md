@@ -86,7 +86,9 @@ ChatGPT runs up to four batches in parallel by default. In **Settings >
 Translation engines > ChatGPT > Parallel batches**, choose 1, 2, 4, 6, or 8.
 A higher setting can shorten large runs when your account accepts overlapping
 requests. Each batch still completes the selected quality checks. After repeated
-temporary failures, the app lowers parallelism for the rest of that run.
+temporary failures, such as network errors or OpenAI server errors, the app
+lowers parallelism for the rest of that run. A usage limit (HTTP 429) is not
+retried this way: the run stops with a message to check your ChatGPT usage.
 
 The progress notice above the Activity log shows the active engine, mod scope,
 and current phase. Its

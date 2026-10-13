@@ -1521,13 +1521,7 @@ function GlossarySettings({
             <span>{source}</span>
           </span>
           {available && (
-            <span
-              className={
-                "translator-state " + (available ? "is-ready" : "is-change")
-              }
-            >
-              Available
-            </span>
+            <span className="translator-state is-ready">Available</span>
           )}
         </div>
 
@@ -1571,7 +1565,7 @@ function GlossarySettings({
                 glossary is available. Translation and export still work fully.
               </span>
             </span>
-            <span className="translator-state is-change">Unavailable</span>
+            <span className="translator-state">Unavailable</span>
           </div>
         )}
 
@@ -1597,6 +1591,7 @@ function GlossarySettings({
                   ? "Stored locally · not included in a release"
                   : "Not built yet · optional and stored locally"}
               </span>
+              <span>Built glossaries are saved right away.</span>
             </span>
             <button
               className="translator-button translator-button-quiet"
@@ -1627,7 +1622,7 @@ function GlossarySettings({
                 recommended.
               </span>
             </span>
-            <span className="translator-state is-change">Outdated</span>
+            <span className="translator-state is-review">Outdated</span>
           </div>
         )}
       </div>

@@ -863,6 +863,52 @@ describe("SettingsDialog", () => {
     expect(
       await screen.findByRole("button", { name: "Build glossary" }),
     ).toBeInTheDocument();
+    // Building is saved at once, apart from the dialog's Save changes.
+    expect(
+      screen.getByText("Built glossaries are saved right away."),
+    ).toBeVisible();
+    expect(screen.getByText("Available")).toHaveClass(
+      "translator-state",
+      "is-ready",
+    );
+  });
+
+  it("shows unavailable and outdated glossary states as warning chips", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          gameXnbPresent: false,
+          sourceAvailable: false,
+          cached: null,
+          outdatedCache: true,
+          packAvailable: false,
+          packXnbAvailable: false,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={{ ...baseSettings, targetLang: "th" }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    const unavailable = await screen.findByText("Unavailable", {
+      selector: ".translator-setting-line > .translator-state",
+    });
+    // Translation still works fully, so this is a neutral note, not a warning.
+    expect(unavailable).not.toHaveClass("is-review");
+    const outdated = await screen.findByText("Outdated", {
+      selector: ".translator-setting-line > .translator-state",
+    });
+    expect(outdated).toHaveClass("translator-state", "is-review");
+    expect(
+      screen.queryByText("Built glossaries are saved right away."),
+    ).toBeNull();
   });
 
   it("does not present an unavailable glossary as a ready state", async () => {
