@@ -913,6 +913,28 @@ mod tests {
         assert_eq!(game_locale_suffix("xx"), None);
     }
 
+    /// Drift guard against `src/languages.ts`: both suites read the same
+    /// fixture, so the TypeScript `gameLocale` entries match this table.
+    #[test]
+    fn shared_target_language_fixture_matches() {
+        let body = include_str!("../../tests/fixtures/target-languages.json");
+        let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
+        let languages = parsed["languages"].as_array().unwrap();
+        let codes: Vec<&str> = languages
+            .iter()
+            .map(|language| language["code"].as_str().unwrap())
+            .collect();
+        assert_eq!(codes, crate::language::TARGET_LANGUAGE_CODES);
+        for language in languages {
+            let code = language["code"].as_str().unwrap();
+            assert_eq!(
+                game_locale_suffix(code),
+                language["gameLocale"].as_str(),
+                "{code}"
+            );
+        }
+    }
+
     #[test]
     fn match_terms_finds_whole_words_only() {
         let glossary = glossary_of(vec![

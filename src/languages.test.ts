@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 
+import fixture from "../tests/fixtures/target-languages.json";
 import { TARGET_LANGUAGES, gameSupportsLanguage } from "./languages";
 
 describe("supported target languages", () => {
+  it("uses the same codes and game locales as the backend", () => {
+    // The Rust side reads the same fixture (glossary.rs
+    // `shared_target_language_fixture_matches`).
+    expect(
+      TARGET_LANGUAGES.map(({ code, gameLocale }) => ({
+        code,
+        gameLocale: gameLocale ?? null,
+      })),
+    ).toEqual(fixture.languages);
+  });
+
   it("matches the complete v1.4 compatibility matrix", () => {
     expect(TARGET_LANGUAGES).toEqual([
       { code: "de", label: "German (de)", gameLocale: "de-DE" },

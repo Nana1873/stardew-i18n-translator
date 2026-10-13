@@ -1,0 +1,24 @@
+{
+  "comment": "Target languages and the game locale each one maps to (null when Stardew ships no content for it). Read by src/languages.test.ts and src-tauri/src/glossary.rs (shared_target_language_fixture_matches), so the TypeScript and Rust locale tables cannot drift apart.",
+  "languages": [
+    { "code": "de", "gameLocale": "de-DE" },
+    { "code": "es", "gameLocale": "es-ES" },
+    { "code": "fr", "gameLocale": "fr-FR" },
+    { "code": "hu", "gameLocale": "hu-HU" },
+    { "code": "it", "gameLocale": "it-IT" },
+    { "code": "ja", "gameLocale": "ja-JP" },
+    { "code": "ko", "gameLocale": "ko-KR" },
+    { "code": "pt", "gameLocale": "pt-BR" },
+    { "code": "ru", "gameLocale": "ru-RU" },
+    { "code": "tr", "gameLocale": "tr-TR" },
+    { "code": "zh", "gameLocale": "zh-CN" },
+    { "code": "vi", "gameLocale": null },
+    { "code": "id", "gameLocale": null },
+    { "code": "uk", "gameLocale": null },
+    { "code": "pl", "gameLocale": null },
+    { "code": "fi", "gameLocale": null },
+    { "code": "nl", "gameLocale": null },
+    { "code": "cs", "gameLocale": null },
+    { "code": "th", "gameLocale": null }
+  ]
+}
