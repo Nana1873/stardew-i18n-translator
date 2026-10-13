@@ -260,6 +260,13 @@ describe("SetupWizard", () => {
       await gotoGlossaryStep("th");
       expect(await screen.findByText("Glossary ready")).toBeVisible();
       expect(screen.getByText(/7 official names are ready/)).toBeVisible();
+      expect(
+        screen.getByText(
+          sourceAvailable
+            ? /needs the community language pack/
+            : /needs the game.s text files/,
+        ),
+      ).toBeVisible();
       expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
       expect(screen.queryByText("No glossary for this language")).toBeNull();
     },
@@ -303,7 +310,7 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep("th");
 
-    expect(await screen.findByText(/7 official terms/)).toBeInTheDocument();
+    expect(await screen.findByText(/7 official names/)).toBeInTheDocument();
     expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
   });
 
@@ -338,7 +345,7 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
-    expect(await screen.findByText(/42 official terms/)).toBeInTheDocument();
+    expect(await screen.findByText(/42 official names/)).toBeInTheDocument();
   });
 
   it("offers Cancel only when settings already exist", () => {

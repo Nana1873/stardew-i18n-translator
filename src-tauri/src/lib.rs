@@ -1528,7 +1528,7 @@ fn glossary_status(
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     // It only needs a rebuild while this language has no current glossary;
     // otherwise the note would never go away.
-    let outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
+    let mut outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
@@ -1543,6 +1543,11 @@ fn glossary_status(
     let pack_xnb_available = detected
         .as_ref()
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
+    // A language the game lacks can only be rebuilt from a language pack;
+    // without one, a rebuild note could never be acted on.
+    if glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none() {
+        outdated_cache = false;
+    }
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
         source_available: glossary::source_available(stardew),

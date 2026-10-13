@@ -443,7 +443,7 @@ export function SetupWizard({
                   </StatusCard>
                 ) : glossaryBuilt ? (
                   <StatusCard tone="success" title="Glossary ready">
-                    Built {glossaryBuilt.termCount} official terms for{" "}
+                    Built {glossaryBuilt.termCount} official names for{" "}
                     {glossaryBuilt.targetLang}
                     {glossaryBuilt.source === "communityPack" &&
                     glossaryBuilt.packName
@@ -458,9 +458,10 @@ export function SetupWizard({
                       !gameSupportsLanguage(targetLang) &&
                       !glossary.packAvailable)) ? (
                   <StatusCard tone="ready" title="Glossary ready">
-                    {glossary.cached.termCount} official names are ready.
-                    Rebuilding them needs the game&apos;s text files, which
-                    weren&apos;t found.
+                    {glossary.cached.termCount} official names are ready.{" "}
+                    {glossary.sourceAvailable
+                      ? "Rebuilding them needs the community language pack, which wasn't found in your Mods folder."
+                      : "Rebuilding them needs the game's text files, which weren't found."}
                   </StatusCard>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
                   glossary.packAvailable && glossary.sourceAvailable ? (
@@ -470,7 +471,6 @@ export function SetupWizard({
                       action={
                         <button
                           type="button"
-                          className="wizard__primary"
                           onClick={handleBuildGlossary}
                           disabled={glossaryBuilding || !targetLang}
                         >
@@ -485,7 +485,7 @@ export function SetupWizard({
                       Stardew Valley doesn’t include this language, but a
                       community language pack
                       {glossary.packName ? ` (${glossary.packName})` : ""} was
-                      detected. Build official-term hints from it — the rest of
+                      found. You can build official names from it — the rest of
                       the app works the same.
                     </StatusCard>
                   ) : glossary.packAvailable ? (
