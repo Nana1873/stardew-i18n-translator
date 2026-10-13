@@ -36,20 +36,20 @@ folder and are never included in the release archive.
 
 ## Release Text
 
-`CHANGELOG.md` is the permanent history. The GitHub release body should be a
-short summary, not a second changelog.
+`CHANGELOG.md` is the permanent history, and the release shows all of it: the
+release script copies the version's complete `CHANGELOG.md` section into the
+GitHub release body, and the Nexus upload sends the same text as the version
+changelog. Write each bullet so it reads well on its own; the script joins its
+wrapped lines into one line, because GitHub and Nexus show every line break and
+Nexus lists every line as a separate entry.
 
-A curated file at `docs/release/v<version>.md` is preferred. Keep it to:
+Optionally add a short, personal summary at `docs/release/v<version>.md`: one
+or two plain sentences, at most 160 characters, no Markdown. It opens the
+GitHub release body and becomes the Nexus file description, followed by a link
+to the full changelog. Without it, the file is described by its name.
 
-- one opening sentence;
-- roughly three to six user-facing bullets;
-- an **Upgrade** section only when the user must do something.
-
-Do not repeat unchanged installation steps, privacy/local-first statements,
-verification boilerplate, internal CI work, or a list of merged pull requests.
-
-When a curated file exists, the release script uses only that file. Otherwise it
-falls back to GitHub-generated notes. It never combines both.
+The release script fails when `CHANGELOG.md` has no section for the version.
+It reads both files as UTF-8 and writes the notes without a byte order mark.
 
 ## Prepare a Release
 
@@ -59,7 +59,7 @@ falls back to GitHub-generated notes. It never combines both.
    corepack pnpm version:set <version>
    ```
 
-   Update `CHANGELOG.md` and, when useful, add the concise curated release file
+   Update `CHANGELOG.md` and, when useful, add the short release summary
    described above.
 
 2. Check the changes, commit them, and integrate them into `main` using the
@@ -154,7 +154,7 @@ powershell -File scripts/create-release.ps1 `
 - verifies the ZIP name, exact two-file layout, and the archived executable's
   product version before contacting GitHub;
 - refuses conflicting local or remote tags and existing releases;
-- uses concise curated notes when present, otherwise GitHub-generated notes;
+- builds the release notes from the optional summary and the full `CHANGELOG.md` section of the version;
 - prints the portable ZIP SHA-256;
 - creates and pushes the version tag only after read-only checks pass;
 - removes tags created by the current run if release creation fails.
@@ -166,7 +166,7 @@ The script uploads the locally built ZIP; it does not rebuild the application.
 Publishing a normal, non-prerelease GitHub release starts
 `.github/workflows/publish-nexus.yml`. That workflow uploads the existing GitHub
 release asset and does not rebuild the app. It also sends that release's body to
-the Nexus version changelog, preserving the reviewed notes and their line breaks.
+the Nexus version changelog as plain text, one line per bullet, without Markdown. The summary from `docs/release/v<version>.md` becomes the file description.
 Empty release notes block the upload.
 
 Required GitHub configuration:
