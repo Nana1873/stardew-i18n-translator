@@ -163,29 +163,47 @@ try {
         throw "A GitHub release already exists for $tag."
     }
 
+    # Release notes: the optional short summary from docs/release, then the
+    # full CHANGELOG section of this version. Files are read as UTF-8 and
+    # written without a BOM (Windows PowerShell defaults would garble "…"),
+    # and each bullet becomes one line, because GitHub and the Nexus
+    # changelog show every line break.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
     $notesPath = Join-Path ([System.IO.Path]::GetTempPath()) "stardew-release-$version-$PID-notes.md"
-    $curatedNotes = Join-Path $repoRoot "docs\release\v$version.md"
-    if (Test-Path -LiteralPath $curatedNotes -PathType Leaf) {
-        $curatedText = (Get-Content -Raw -LiteralPath $curatedNotes).Trim()
-        if ([string]::IsNullOrWhiteSpace($curatedText)) {
-            throw "Curated release notes are empty: $curatedNotes"
+    $changelogText = [System.IO.File]::ReadAllText((Join-Path $repoRoot "CHANGELOG.md"), $utf8) -replace "`r`n", "`n"
+    $sectionMatch = [regex]::Match(
+        $changelogText,
+        "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|\z)"
+    )
+    if (!$sectionMatch.Success -or [string]::IsNullOrWhiteSpace($sectionMatch.Groups[1].Value)) {
+        throw "CHANGELOG.md has no section for $version."
+    }
+    $section = ($sectionMatch.Groups[1].Value.Trim() -replace "\n[ \t]+(?=\S)", " ")
+    $notesParts = @()
+    $summaryPath = Join-Path $repoRoot "docs\release\v$version.md"
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+        $summary = ([System.IO.File]::ReadAllText($summaryPath, $utf8) -replace "`r`n", "`n").Trim()
+        if ([string]::IsNullOrWhiteSpace($summary)) {
+            throw "Release summary is empty: $summaryPath"
         }
-        Set-Content -LiteralPath $notesPath -Encoding utf8 -Value $curatedText
-        $notesSource = "docs/release/v$version.md"
+        # A plain paragraph: soft line breaks become spaces.
+        $summary = $summary -replace "(?<!\n)\n(?!\n)", " "
+        # Nexus file descriptions hold 255 characters, including the link
+        # to the full changelog that the upload workflow appends.
+        if ($summary -match '^[-*#]') {
+            throw "Release summary must be plain sentences, not Markdown: $summaryPath"
+        }
+        if ($summary.Length -gt 160) {
+            throw "Release summary is $($summary.Length) characters; keep it at 160 or less: $summaryPath"
+        }
+        $notesParts += $summary
+        $notesSource = "docs/release/v$version.md and CHANGELOG.md"
     }
     else {
-        $generatedNotes = gh api `
-            --method POST `
-            "repos/$repository/releases/generate-notes" `
-            -f tag_name=$tag `
-            -f target_commitish=$headCommit `
-            --jq .body
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to generate GitHub release notes."
-        }
-        Set-Content -LiteralPath $notesPath -Encoding utf8 -Value $generatedNotes
-        $notesSource = "GitHub-generated notes"
+        $notesSource = "CHANGELOG.md"
     }
+    $notesParts += $section
+    [System.IO.File]::WriteAllText($notesPath, ($notesParts -join "`n`n") + "`n", $utf8)
 
     $hash = (Get-FileHash -LiteralPath $resolvedZip -Algorithm SHA256).Hash
     if ($Preflight) {
