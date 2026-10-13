@@ -324,6 +324,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A broken `de.json` or `de-DE.json` next to a readable one is skipped like
   the game does and named in the scan, whichever of the two it is. JSON export
   no longer stops on it and keeps a backup when replacing or removing it.
+- The editor explains several token problems of one string in the same order
+  as the export result.
 
 ## [2.4.0] - 2026-10-11
 

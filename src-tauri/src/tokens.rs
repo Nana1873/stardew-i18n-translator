@@ -1851,11 +1851,35 @@ mod tests {
                 case["source"].as_str().unwrap(),
                 case["target"].as_str().unwrap(),
             );
+            let differences = token_differences(source, target);
             assert_eq!(
-                explain_differences(&token_differences(source, target), target),
+                explain_differences(&differences, target),
                 case["text"].as_str().unwrap(),
                 "explain({target:?})"
             );
+            // Order and severity per difference, as TS `tokenDifferences`.
+            if let Some(expected) = case["differences"].as_array() {
+                let actual: Vec<serde_json::Value> = differences
+                    .iter()
+                    .map(|difference| {
+                        serde_json::json!({
+                            "token": difference.token,
+                            "sourceCount": difference.source_count,
+                            "targetCount": difference.target_count,
+                            "severity": difference.severity,
+                        })
+                    })
+                    .collect();
+                assert_eq!(&actual, expected, "differences({target:?})");
+            }
+            // The export explains only the errors that leave a string out.
+            if let Some(errors_text) = case["errorsText"].as_str() {
+                assert_eq!(
+                    explain_differences(&blocking_differences(source, target), target),
+                    errors_text,
+                    "explain errors({target:?})"
+                );
+            }
         }
         let cases = parsed["cases"].as_array().expect("fixture has cases");
         assert!(cases.len() >= 10, "fixture should stay comprehensive");

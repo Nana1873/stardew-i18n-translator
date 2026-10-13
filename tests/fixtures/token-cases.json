@@ -785,6 +785,32 @@
   ],
   "explanations": [
     {
+      "source": "Hello {{name}}!#$b#Bye.",
+      "target": "Hallo! Tschüss. {{Extra}}",
+      "differences": [
+        {
+          "token": "#$b#",
+          "sourceCount": 1,
+          "targetCount": 0,
+          "severity": "error"
+        },
+        {
+          "token": "{{Extra}}",
+          "sourceCount": 0,
+          "targetCount": 1,
+          "severity": "error"
+        },
+        {
+          "token": "{{name}}",
+          "sourceCount": 1,
+          "targetCount": 0,
+          "severity": "warning"
+        }
+      ],
+      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. {{Extra}} is not in the English text. The game would show it as raw text. {{name}} is missing from the translation. The game shows nothing in its place. Fine if intended.",
+      "errorsText": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. {{Extra}} is not in the English text. The game would show it as raw text."
+    },
+    {
       "source": "Take [ArticleFor [SuggestedItem]].",
       "target": "Nimm [SuggestedItem].",
       "text": "[ArticleFor [SuggestedItem]] is missing from the translation. Only the a/an article is lost. Fine if intended."

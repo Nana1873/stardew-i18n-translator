@@ -232,7 +232,8 @@ describe("validate", () => {
       validate("Question.#$r -1 -1 Yes#Yes.", "Frage.#$r -1 -1 Ja#Ja.").map(
         (issue) => issue.ruleId,
       ),
-    ).toEqual(["token-missing", "token-added"]);
+      // Code-point order like the export: `…Ja#` sorts before `…Yes#`.
+    ).toEqual(["token-added", "token-missing"]);
     expect(
       validate("Dinner [196 649].", "Abendessen [196 650].").map(
         (issue) => issue.ruleId,
@@ -243,7 +244,7 @@ describe("validate", () => {
         "Prize%item money 2500 2501 %%",
         "Preis%item Geld 2500 2501 %%",
       ).map((issue) => issue.ruleId),
-    ).toEqual(["token-missing", "token-added"]);
+    ).toEqual(["token-added", "token-missing"]);
     expect(
       validate(
         "Request%item quest 120 %%",
