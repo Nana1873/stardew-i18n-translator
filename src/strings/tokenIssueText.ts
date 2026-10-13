@@ -75,6 +75,102 @@ function delta(differences: TokenDifference[], token: string) {
   return difference ? difference.targetCount - difference.sourceCount : 0;
 }
 
+/** Dialogue command names the game knows (Stardew 1.6 `Dialogue.cs`). The
+ * game matches them case-sensitively, so `$B` is shown as text. Mirrors Rust
+ * `DIALOGUE_COMMANDS`. */
+const DIALOGUE_COMMANDS = new Set([
+  "a",
+  "action",
+  "b",
+  "c",
+  "d",
+  "e",
+  "h",
+  "k",
+  "l",
+  "neutral",
+  "p",
+  "q",
+  "query",
+  "r",
+  "s",
+  "t",
+  "u",
+  "v",
+  "y",
+]);
+
+/** The correct-case form of a token that is a known dialogue command typed
+ * in the wrong letter case, e.g. `#$B#` → `#$b#` or `$Q` → `$q`. Mirrors
+ * Rust `case_variant_command`. */
+function caseVariantCommand(token: string): string | null {
+  const prefix = token.startsWith("#$")
+    ? "#$"
+    : token.startsWith("$")
+      ? "$"
+      : null;
+  if (prefix === null) return null;
+  const rest = token.slice(prefix.length);
+  const name = /^[A-Za-z]*/.exec(rest)?.[0] ?? "";
+  const lower = name.toLowerCase();
+  if (name === lower || !DIALOGUE_COMMANDS.has(lower)) return null;
+  return `${prefix}${lower}${rest.slice(name.length)}`;
+}
+
+/** The missing token that a wrong-case command most likely replaced: the
+ * correct form itself, or that command with its arguments. */
+function caseVariantPartner(
+  differences: TokenDifference[],
+  suggestion: string,
+): TokenDifference | undefined {
+  return differences.find(
+    (item) =>
+      item.targetCount < item.sourceCount &&
+      (item.token === suggestion || item.token.startsWith(`${suggestion} `)),
+  );
+}
+
+/** What a dialogue break or command does, or null for other tokens. Mirrors
+ * Rust `dialogue_command_consequence`. */
+function dialogueCommandConsequence(token: string): string | null {
+  if (/^#\$b[#$*]/.test(token))
+    return "It starts a new dialogue box, so the text would be split into boxes differently.";
+  if (/^#\$e[#$*]/.test(token))
+    return "It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.";
+  if (
+    token.startsWith("#$action") ||
+    ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
+  )
+    return "The game needs it to run the dialogue (answers, flags, or events).";
+  return null;
+}
+
+/** One finding for a dialogue command typed in the wrong letter case. Only
+ * when the correct command is missing from the translation is it suggested.
+ * Mirrors Rust `case_variant_message`. */
+function caseVariantMessage(
+  token: string,
+  partner: TokenDifference | undefined,
+): string {
+  const text = `${token} is not a dialogue command the game knows, so it would show as text.`;
+  if (!partner) return text;
+  const purpose = dialogueCommandConsequence(partner.token);
+  const suggestion = `${text} Did you mean ${partner.token}?`;
+  return purpose ? `${suggestion} ${purpose}` : suggestion;
+}
+
+/** Whether the wrong-case command accounts for every missing copy of its
+ * partner; otherwise the partner keeps its own message for the rest. */
+function coversPartner(
+  difference: TokenDifference,
+  partner: TokenDifference,
+): boolean {
+  return (
+    partner.sourceCount - partner.targetCount <=
+    difference.targetCount - difference.sourceCount
+  );
+}
+
 /** What a token difference does in the game, as one sentence. Errors name
  * the consequence; warnings end with "Fine if intended." Mirrors Rust
  * `tokens::token_consequence` word for word. */
@@ -85,15 +181,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
       : "Fine if intended.";
-  if (/^#\$b[#$*]/.test(token))
-    return "It starts a new dialogue box, so the text would be split into boxes differently.";
-  if (/^#\$e[#$*]/.test(token))
-    return "It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.";
-  if (
-    token.startsWith("#$action") ||
-    ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
-  )
-    return "The game needs it to run the dialogue (answers, flags, or events).";
+  const command = dialogueCommandConsequence(token);
+  if (command !== null) return command;
   if (token.startsWith("%item") || token.startsWith("%action"))
     return missing
       ? "The attached item or reward would not be given."
@@ -210,8 +299,29 @@ export function describeTokenIssue(
     });
   }
 
+  // A wrong-case command and the correct one it replaced are one finding.
+  const merged = new Set<TokenDifference>();
   for (const difference of differences) {
     const { token } = difference;
+    if (merged.has(difference)) continue;
+    const suggestion =
+      difference.targetCount > difference.sourceCount
+        ? caseVariantCommand(token)
+        : null;
+    if (suggestion !== null) {
+      const partner = caseVariantPartner(differences, suggestion);
+      if (partner && coversPartner(difference, partner)) merged.add(partner);
+      messages.push({
+        severity:
+          difference.severity === "error" || partner?.severity === "error"
+            ? "error"
+            : "warning",
+        kind: "added",
+        message: caseVariantMessage(token, partner),
+        token,
+      });
+      continue;
+    }
     if (switchDamaged) {
       // The damaged switch is already explained; its leftover shape and extra
       // ^ are part of the same problem. A ^ that went missing is separate.

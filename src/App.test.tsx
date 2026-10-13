@@ -318,6 +318,7 @@ const EXPORT_RESULT = {
     {
       relativeDir: "i18n",
       targetPath: "x/i18n/de.json",
+      shownPath: "Mods/x/i18n/de.json",
       written: true,
       removed: false,
       backedUp: false,
@@ -1564,7 +1565,9 @@ describe("App shell", () => {
     fireEvent.click(
       within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     );
-    expect(await inspectLatestResult()).toHaveTextContent("x/i18n/de.json");
+    expect(await inspectLatestResult()).toHaveTextContent(
+      "Mods/x/i18n/de.json",
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: "Back to notification" }),
@@ -3675,7 +3678,9 @@ describe("App shell", () => {
 
     const tray = await inspectLatestResult();
     expect(tray).toHaveTextContent("LLM batch exported");
-    expect(tray).toHaveTextContent("C:/out/test.llm-batch.json");
+    // Saved outside the Mods folder: the file name only, not the user's path.
+    expect(tray).toHaveTextContent("test.llm-batch.json");
+    expect(tray).not.toHaveTextContent("C:/out/");
     expect(invokeMock).toHaveBeenCalledWith("export_llm_batch", {
       modUniqueId: "a.b",
       items: [
@@ -3746,7 +3751,8 @@ describe("App shell", () => {
     );
 
     const tray = await inspectLatestResult();
-    expect(tray).toHaveTextContent("C:/chosen/custom.json");
+    expect(tray).toHaveTextContent("custom.json");
+    expect(tray).not.toHaveTextContent("C:/chosen/");
     expect(invokeMock).toHaveBeenCalledWith("pick_llm_batch_destination", {
       suggestedFileName: "a.b.llm-batch.json",
     });
@@ -4659,7 +4665,8 @@ describe("App shell", () => {
     const result = await inspectLatestResult();
     expect(result).toHaveTextContent("1 of 1 text added to Review");
     expect(result).toHaveTextContent("test.llm-result.json");
-    expect(result).toHaveTextContent("C:/results/test.llm-result.json");
+    // The user's own folders are not shown; Show source file still uses them.
+    expect(result).not.toHaveTextContent("C:/results/");
     fireEvent.click(
       within(result).getByRole("button", { name: "Open Review" }),
     );

@@ -577,17 +577,23 @@ fn export_mod(
     .inspect_err(|error| {
         log::error!(target: "app", "export_mod({}) failed: {error}", resolved.mod_unique_id)
     })?;
-            export::show_removed_regional_files(&mut result.files, &mods_root);
+            export::show_relative_paths(&mut result.files, &mods_root);
             let regional_summary = regional_removal_summary(result.files.iter());
             let changed_files = result
                 .files
                 .iter()
                 .filter(|file| file.written || file.removed)
                 .collect::<Vec<_>>();
-            let (path, file_name) = if changed_files.len() == 1 {
-                operation_file_location(&changed_files[0].target_path)
+            let ((path, file_name), shown_path) = if changed_files.len() == 1 {
+                (
+                    operation_file_location(&changed_files[0].target_path),
+                    changed_files[0].shown_path.clone(),
+                )
             } else {
-                (Some(mods_root.display().to_string()), None)
+                (
+                    (Some(mods_root.display().to_string()), None),
+                    "Mods".to_string(),
+                )
             };
             remember_operation(
                 &history,
@@ -616,6 +622,7 @@ fn export_mod(
                     item_count: result.total_written_keys,
                     path,
                     file_name,
+                    shown_path: Some(shown_path),
                     warnings: compact_export_warnings(&result.skipped),
                     details: vec![
                         operation_detail("Component", &resolved.mod_unique_id),
@@ -685,7 +692,7 @@ fn export_all_mods(
                 |error| log::error!(target: "app", "export_all_mods failed: {error}"),
             )?;
             for exported in &mut result.mods {
-                export::show_removed_regional_files(&mut exported.result.files, &mods_root);
+                export::show_relative_paths(&mut exported.result.files, &mods_root);
             }
             let regional_summary = regional_removal_summary(
                 result
@@ -731,6 +738,7 @@ fn export_all_mods(
                     item_count: result.total_written_keys,
                     path: Some(mods_root.display().to_string()),
                     file_name: None,
+                    shown_path: Some("Mods".to_string()),
                     warnings: compact_export_warnings(&skipped),
                     details: vec![
                         operation_detail("Components changed", result.mods_changed),
@@ -892,6 +900,8 @@ fn remember_zip_operation(
             item_count: result.strings,
             path: Some(result.path.clone()),
             file_name: Some(result.file_name.clone()),
+            // ZIPs are always saved outside the game and Mods folders.
+            shown_path: Some(result.file_name.clone()),
             warnings: if result.left_out.is_empty() {
                 Vec::new()
             } else {
@@ -901,7 +911,6 @@ fn remember_zip_operation(
                 )]
             },
             details: vec![
-                operation_detail("Destination folder", &result.folder),
                 operation_detail("Translation files", result.entries),
                 operation_detail("Strings", result.strings),
             ],
@@ -1068,6 +1077,7 @@ fn remember_llm_batch_export(
                 outcome.string_count
             ),
             item_count: outcome.string_count,
+            shown_path: file_name.clone(),
             path,
             file_name,
             warnings: Vec::new(),
@@ -1221,6 +1231,8 @@ fn remember_llm_batch_import(
                 }
             ),
             item_count: summary.imported,
+            // The batch file is the user's own; name it without their folders.
+            shown_path: file_name.clone(),
             path,
             file_name,
             warnings,
@@ -2398,6 +2410,7 @@ fn remember_ai_run(
             item_count: result.completed,
             path: None,
             file_name: None,
+            shown_path: None,
             warnings: result.error.iter().cloned().collect(),
             details: vec![
                 operation_detail("Scope", scope),
@@ -3763,6 +3776,15 @@ mod output_history_tests {
         };
         remember_zip_operation(&history, &previous, "Translation ZIP created");
         let prior_entry = history.list().unwrap()[0].clone();
+        // The ZIP is saved outside Mods, so only its file name is shown; the
+        // full path stays for Open folder.
+        assert_eq!(prior_entry.shown_path.as_deref(), Some("previous.zip"));
+        assert_eq!(prior_entry.path, Some(previous.path.clone()));
+        let root_text = root.display().to_string();
+        assert!(prior_entry
+            .details
+            .iter()
+            .all(|detail| !detail.value.contains(&root_text)));
         let working = translations::language_root(&config, "de").unwrap();
         let batch = history
             .apply_reversible_batch_groups(

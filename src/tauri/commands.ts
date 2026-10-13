@@ -302,6 +302,9 @@ export interface OperationHistoryEntry {
   itemCount: number;
   path?: string;
   fileName?: string;
+  /** `path` as the app shows it: relative to the Mods folder for exported
+   * translation files, only the file name for files saved elsewhere. */
+  shownPath?: string;
   warnings: string[];
   details: OperationDetail[];
   canUndo: boolean;
@@ -354,6 +357,8 @@ export interface SkippedKey {
 export interface ExportFileResult {
   relativeDir: string;
   targetPath: string;
+  /** The target relative to the Mods folder, e.g. `Mods/<Mod>/i18n/de.json`. */
+  shownPath?: string;
   written: boolean;
   /** Every translation was cleared, so the stale target file was removed (after a backup). */
   removed: boolean;

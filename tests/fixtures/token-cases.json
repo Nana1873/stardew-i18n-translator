@@ -781,6 +781,12 @@
       "source": "Hi.",
       "target": "Hallo.%noturn",
       "blocked": false
+    },
+    {
+      "name": "a dialogue break in the wrong letter case still blocks",
+      "source": "Hi.#$b#Bye.",
+      "target": "Hallo.#$B#Tschuess.",
+      "blocked": true
     }
   ],
   "explanations": [
@@ -1044,6 +1050,65 @@
       "source": "Welcome to [FarmName].",
       "target": "欢迎来到［FarmName］。",
       "text": "[FarmName] is missing from the translation. The game would not insert this value or item. The text contains full-width ［］ where the English text has [ ]. The game shows them as they are; use the normal characters."
+    },
+    {
+      "source": "Hi.#$b#Bye.",
+      "target": "Hallo.#$B#Tschüss.",
+      "differences": [
+        {
+          "token": "#$B#",
+          "sourceCount": 0,
+          "targetCount": 1,
+          "severity": "error"
+        },
+        {
+          "token": "#$b#",
+          "sourceCount": 1,
+          "targetCount": 0,
+          "severity": "error"
+        }
+      ],
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently.",
+      "errorsText": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently."
+    },
+    {
+      "source": "Go.#$e#Later.",
+      "target": "Los.#$E#Später.",
+      "text": "#$E# is not a dialogue command the game knows, so it would show as text. Did you mean #$e#? It ends today's conversation and saves the rest for next time, so the dialogue would play out differently."
+    },
+    {
+      "source": "Hi.#$r 1 0 key#Yes.",
+      "target": "Hallo.#$R 1 0 key#Ja.",
+      "text": "#$R 1 0 key# is not a dialogue command the game knows, so it would show as text. Did you mean #$r 1 0 key#? The game needs it to run the dialogue (answers, flags, or events)."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo.$K",
+      "text": "$K is not a dialogue command the game knows, so it would show as text."
+    },
+    {
+      "source": "Hi a lot.",
+      "target": "Hallo $A lot.",
+      "text": "$A is not a dialogue command the game knows, so it would show as text."
+    },
+    {
+      "source": "Hi.#$b#Bye.#$b#Ok",
+      "target": "Hallo.#$B#Tschuess. Ok",
+      "differences": [
+        {
+          "token": "#$B#",
+          "sourceCount": 0,
+          "targetCount": 1,
+          "severity": "error"
+        },
+        {
+          "token": "#$b#",
+          "sourceCount": 2,
+          "targetCount": 0,
+          "severity": "error"
+        }
+      ],
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently. #$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently."
     },
     {
       "source": "Fine.",

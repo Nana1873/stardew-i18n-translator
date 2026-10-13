@@ -63,6 +63,10 @@ pub struct OperationHistoryEntry {
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
+    /// `path` as the app shows it: relative to the Mods folder for exported
+    /// translation files, only the file name for files saved elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown_path: Option<String>,
     pub warnings: Vec<String>,
     pub details: Vec<OperationDetail>,
     pub can_undo: bool,
@@ -78,6 +82,7 @@ pub struct CompletedOperation {
     pub item_count: usize,
     pub path: Option<String>,
     pub file_name: Option<String>,
+    pub shown_path: Option<String>,
     pub warnings: Vec<String>,
     pub details: Vec<OperationDetail>,
 }
@@ -229,6 +234,7 @@ impl OperationHistoryState {
             item_count: operation.item_count,
             path: operation.path,
             file_name: operation.file_name,
+            shown_path: operation.shown_path,
             warnings: bounded_warnings(operation.warnings),
             details: bounded_details(operation.details),
             can_undo: false,
@@ -284,6 +290,7 @@ impl OperationHistoryState {
             item_count,
             path: None,
             file_name: None,
+            shown_path: None,
             warnings: Vec::new(),
             details: vec![OperationDetail {
                 label: "Components".to_string(),
@@ -357,6 +364,7 @@ impl OperationHistoryState {
             item_count: restored,
             path: None,
             file_name: None,
+            shown_path: None,
             warnings: Vec::new(),
             details: vec![OperationDetail {
                 label: "Components".to_string(),
@@ -383,6 +391,7 @@ mod tests {
             item_count: index,
             path: None,
             file_name: None,
+            shown_path: None,
             warnings: Vec::new(),
             details: Vec::new(),
         }
