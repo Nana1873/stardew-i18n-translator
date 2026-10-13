@@ -67,7 +67,8 @@ and evidence-matrix regressions run through `pnpm test:desktop:guards`.
    LLM result JSON. Imported text enters Review, while a conflicting value
    preserves the saved personal edit. Approve both imported suggestions through
    the editor and check Done. Import does not write an installed locale file.
-5. Use **Files… → Export JSON for selected mod…** and confirm its preview. Check the
+5. Use **Files… → Export…**, choose **This mod** and **JSON**, and confirm its
+   preview. Check the
    complete output dictionary, omitted empty source, Unicode text, and preserved
    `{{PlayerName}}`, `{{Count}}`, `$h`, `#$b#`, `%farm`, and `@` tokens. Source and
    import inputs remain unchanged.
@@ -83,12 +84,12 @@ and evidence-matrix regressions run through `pnpm test:desktop:guards`.
    Cancel replacement export: neither locale nor backup changes. Confirm the
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
-8. Use **Files… → Export ZIP for selected mod…**. Cancel the real Save dialog,
-   change the install folder to ` OriginalDesktopSmoke` (including its leading
+8. Use **Files… → Export…** with **This mod** and **ZIP**. Cancel the real
+   Save dialog, change the install folder under **ZIP settings** to ` OriginalDesktopSmoke` (including its leading
    space), reopen the Save dialog,
    and save to a new synthetic path. Inspect the generated archive: exactly
    ` OriginalDesktopSmoke/i18n/de.json` with expected translations and tokens.
-   Use **Files… → Export ZIP for all mods…** through its real Save dialog and verify
+   Use **Export…** with **All mods** and **ZIP** through its real Save dialog and verify
    that it contains exactly `DesktopSmoke/i18n/de.json`. Neither ZIP includes
    source strings, manifests, original assets, installer metadata, portable
    state, or backups. Installed locale and backup remain unchanged.

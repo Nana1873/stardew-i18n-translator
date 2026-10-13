@@ -224,21 +224,19 @@ const button = (name) => {
     return css(
       'button.desktop-filter-action[data-status="' + statuses[name] + '"]',
     );
-  const titles = {
-    "Export current mod": "Export JSON for selected mod…",
-    "Export all mods …": "Export JSON for all mods…",
-    "Translation ZIP · current mod": "Export ZIP for selected mod…",
-    "Translation ZIP · all mods": "Export ZIP for all mods…",
+  // The Files menu has one Export… entry; the dialog then asks for the mods
+  // and the output. `click` runs these choices (see chooseExport).
+  const exportChoices = {
+    "Export current mod": ["This mod", "JSON"],
+    "Export all mods …": ["All mods", "JSON"],
+    "Translation ZIP · current mod": ["This mod", "ZIP"],
+    "Translation ZIP · all mods": ["All mods", "ZIP"],
   };
-  if (titles[name])
-    return By.xpath(
-      '//button[@role="menuitem"][.//span[normalize-space(.)=' +
-        JSON.stringify(titles[name]) +
-        "]]",
-    );
+  if (exportChoices[name]) return { exportChoice: exportChoices[name] };
   name =
     {
-      Export: "Export JSON",
+      Export: "Export to Mods folder",
+      "Export and replace": "Replace in Mods folder",
       "Choose save location …": "Save ZIP…",
       "Save JSON batch": "Save batch",
     }[name] ?? name;
@@ -270,7 +268,59 @@ async function element(locator) {
     `Visible element: ${locator}`,
   );
 }
+const exportRadio = (name) =>
+  By.xpath(
+    '//button[@role="radio"][normalize-space(.)=' + JSON.stringify(name) + "]",
+  );
+/** Opens the Export… dialog from the open Files menu and picks the mods and
+ * the output. Waits until a JSON preflight has finished, so the next click
+ * reaches the preview for this choice. */
+async function chooseExport([scope, output]) {
+  await click(
+    By.xpath(
+      '//button[@role="menuitem"][.//span[normalize-space(.)="Export…"]]',
+    ),
+  );
+  for (const name of [scope, output]) {
+    await waitFor(
+      "export choices ready",
+      async () =>
+        (
+          await driver.findElements(
+            css('[role="radiogroup"][aria-busy="true"]'),
+          )
+        ).length === 0,
+    );
+    const option = await element(exportRadio(name));
+    if ((await option.getAttribute("aria-checked")) !== "true")
+      await click(exportRadio(name));
+  }
+  await waitFor(
+    "export preview ready",
+    async () =>
+      (await driver.findElements(css('[role="radiogroup"][aria-busy="true"]')))
+        .length === 0 &&
+      (output !== "JSON" ||
+        (await driver.findElements(css("#translator-zip-title"))).length === 0),
+  );
+}
+const installFolder = By.xpath(
+  "//label[normalize-space(.)='Install folder']/following-sibling::div/input",
+);
+/** Expands a collapsed section of the export dialog by its title. */
+async function expandSection(title) {
+  await waitFor(`${title} expanded`, async () => {
+    const [details] = await driver.findElements(
+      css(`details[data-section="${title}"]`),
+    );
+    if (!details || !(await details.isDisplayed())) return false;
+    if ((await details.getAttribute("open")) !== null) return true;
+    await (await details.findElement(css("summary"))).click();
+    return false;
+  });
+}
 async function click(locator) {
+  if (locator.exportChoice) return chooseExport(locator.exportChoice);
   await driver.wait(
     async () => {
       try {
@@ -1154,11 +1204,9 @@ try {
       30000,
     );
     assert.equal(await exists(destination), false);
-    await fill(
-      By.xpath("//label[contains(., 'Install folder')]/input"),
-      " OriginalDesktopSmoke",
-    );
-    await click(css(".desktop-zip-details summary"));
+    await expandSection("ZIP settings");
+    await fill(installFolder, " OriginalDesktopSmoke");
+    await expandSection("Details");
     await element(By.xpath("//code[.=' OriginalDesktopSmoke/i18n/de.json']"));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
@@ -1196,10 +1244,8 @@ try {
       await element(
         css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
       );
-      await fill(
-        By.xpath("//label[contains(., 'Install folder')]/input"),
-        "ReplacedDesktopSmoke",
-      );
+      await expandSection("ZIP settings");
+      await fill(installFolder, "ReplacedDesktopSmoke");
       await click(button("Choose save location …"));
       await native("cancel-overwrite", "Save translation ZIP", destination);
       await element(
@@ -1499,6 +1545,7 @@ try {
     element,
     fill,
     absent,
+    expandSection,
     screenshot,
     openEntry,
     saveEntry,

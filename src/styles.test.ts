@@ -126,3 +126,38 @@ describe("CSS custom properties", () => {
     );
   });
 });
+
+describe("Export… choice styles", () => {
+  const exportStyles = readFileSync(
+    resolve("src/export/exportDialog.css"),
+    "utf8",
+  );
+  const segmentRules = [...exportStyles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(([, selector, body]) => ({
+      selectors: selector
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split(",")
+        .map((part) => part.replace(/\s+/g, " ").trim()),
+      body,
+    }))
+    .filter(({ selectors }) =>
+      selectors.some((part) => part.includes(".desktop-xd-seg button")),
+    );
+
+  it("keeps the gold fill of the selected option under hover and focus", () => {
+    const selected = segmentRules.find(({ selectors }) =>
+      selectors.some((part) => part.endsWith('button[aria-checked="true"]')),
+    );
+    expect(selected?.body).toContain("var(--translator-brand-soft)");
+    for (const state of [":hover", ":focus", ":focus-visible"])
+      expect(selected?.selectors).toContain(
+        `#stardew-i18n-translator .desktop-xd-seg button[aria-checked="true"]${state}`,
+      );
+    // No hover or focus rule may give the selected option another background.
+    for (const { selectors, body } of segmentRules) {
+      if (!/background:/.test(body) || body.includes("brand-soft")) continue;
+      for (const part of selectors.filter((p) => /:hover|:focus/.test(p)))
+        expect(part).toContain(':not([aria-checked="true"])');
+    }
+  });
+});
