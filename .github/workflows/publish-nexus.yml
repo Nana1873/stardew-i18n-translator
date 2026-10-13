@@ -98,17 +98,42 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "changelog_url=$changelog_url" >> "$GITHUB_OUTPUT"
 
-          # Preserve the reviewed release notes, including line breaks. Use a
-          # delimiter absent from the body so its text cannot create outputs.
-          delimiter="changelog_$(cat /proc/sys/kernel/random/uuid)"
-          while grep -Fxq -- "$delimiter" <<< "$changelog"; do
-            delimiter="changelog_$(cat /proc/sys/kernel/random/uuid)"
+          # Nexus shows every changelog line as its own entry and no Markdown:
+          # drop blank lines and the Markdown marks, keep one line per bullet.
+          changelog="$(
+            printf '%s\n' "$changelog" \
+              | sed -e 's/\r$//' -e '/^[[:space:]]*$/d' \
+                -e 's/^###* \(.*\)$/\1:/' -e 's/^[-*] //' \
+                -e 's/\*\*//g' -e 's/`//g'
+          )"
+
+          # The short personal summary from docs/release becomes the Nexus file
+          # description; without one, the file is described by its name.
+          summary=""
+          if summary_b64="$(gh api "repos/$GH_REPO/contents/docs/release/v$version.md?ref=$TAG_NAME" --jq '.content' 2>/dev/null)"; then
+            summary="$(
+              printf '%s' "$summary_b64" | base64 --decode \
+                | tr '\r\n' '  ' | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//'
+            )"
+          fi
+          if [[ -z "$summary" ]]; then
+            summary="Stardew i18n Translator $version"
+          fi
+
+          # Preserve the reviewed text, including line breaks. Use a delimiter
+          # absent from the text so it cannot create outputs.
+          for name in changelog summary; do
+            value="${!name}"
+            delimiter="${name}_$(cat /proc/sys/kernel/random/uuid)"
+            while grep -Fxq -- "$delimiter" <<< "$value"; do
+              delimiter="${name}_$(cat /proc/sys/kernel/random/uuid)"
+            done
+            {
+              printf '%s\n' "$name<<$delimiter"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delimiter"
+            } >> "$GITHUB_OUTPUT"
           done
-          {
-            printf '%s\n' "changelog<<$delimiter"
-            printf '%s\n' "$changelog"
-            printf '%s\n' "$delimiter"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Resolve Nexus mod ID
         id: nexus_mod
@@ -142,9 +167,9 @@ jobs:
           changelog: ${{ steps.release.outputs.changelog }}
           display_name: Stardew i18n Translator ${{ steps.release.outputs.version }}
           description: |
-            Stardew i18n Translator ${{ steps.release.outputs.version }}
+            ${{ steps.release.outputs.summary }}
 
-            Full Changelog: ${{ steps.release.outputs.changelog_url }}
+            Full changelog: ${{ steps.release.outputs.changelog_url }}
           category: main
 
       - name: Add changelog to existing Nexus version
