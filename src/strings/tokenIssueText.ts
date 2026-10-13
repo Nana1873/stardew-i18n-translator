@@ -1,4 +1,5 @@
 import {
+  isDialogueEnd,
   isGenderSwitchShape,
   isPortraitCommand,
   type TokenSeverity,
@@ -135,8 +136,8 @@ function caseVariantPartner(
 function dialogueCommandConsequence(token: string): string | null {
   if (/^#\$b[#$*]/.test(token))
     return "It starts a new dialogue box, so the text would be split into boxes differently.";
-  if (/^#\$e[#$*]/.test(token))
-    return "It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.";
+  if (isDialogueEnd(token))
+    return "The game skips this command, so the dialogue plays the same. Fine if intended.";
   if (
     token.startsWith("#$action") ||
     ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
@@ -154,7 +155,10 @@ function caseVariantMessage(
 ): string {
   const text = `${token} is not a dialogue command the game knows, so it would show as text.`;
   if (!partner) return text;
-  const purpose = dialogueCommandConsequence(partner.token);
+  // `#$e#` itself does nothing, so its purpose would only confuse here.
+  const purpose = isDialogueEnd(partner.token)
+    ? null
+    : dialogueCommandConsequence(partner.token);
   const suggestion = `${text} Did you mean ${partner.token}?`;
   return purpose ? `${suggestion} ${purpose}` : suggestion;
 }
@@ -193,6 +197,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return "In a quick-question reply it starts a new dialogue box, so the text would be split into boxes differently.";
   if (token === "_")
     return "It separates the question, answers, and replies of a quick question; without it the game mixes them up.";
+  if (token === "[#]" && !missing && severity !== "error")
+    return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
   if (token === "[#]")
     return missing
       ? "The letter title would show as part of the letter text."

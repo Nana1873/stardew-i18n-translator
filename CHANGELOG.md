@@ -19,6 +19,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A missing or extra `#$e#` is a note instead of a token error, so the string
+  is exported. Stardew Valley 1.6 skips this command, so the dialogue plays the
+  same; the old explanation that it ends the conversation was wrong.
+- A letter translated with a female version after `¦` is checked per player
+  gender, and a female version hidden behind a second `[#]` is a note: the
+  game shows only the text before the first `[#]`, so female players see the
+  male version.
 - The Export… dialog lists only the files an export would really change and
   says when they are already up to date. For All mods with JSON it counted
   every mod with translation files, including mods with nothing translated

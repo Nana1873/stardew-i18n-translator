@@ -416,9 +416,10 @@ fn case_variant_message(token: &str, partner: Option<&TokenDifference>) -> Strin
         return text;
     };
     let suggestion = format!("{text} Did you mean {}?", partner.token);
+    // `#$e#` itself does nothing, so its purpose would only confuse here.
     match dialogue_command_consequence(&partner.token) {
-        Some(purpose) => format!("{suggestion} {purpose}"),
-        None => suggestion,
+        Some(purpose) if !is_dialogue_end(&partner.token) => format!("{suggestion} {purpose}"),
+        _ => suggestion,
     }
 }
 
@@ -427,6 +428,18 @@ fn case_variant_message(token: &str, partner: Option<&TokenDifference>) -> Strin
 /// TS `coversPartner`.
 fn covers_partner(difference: &TokenDifference, partner: &TokenDifference) -> bool {
     partner.source_count - partner.target_count <= difference.target_count - difference.source_count
+}
+
+/// `#$e#`: SDV 1.6 recognizes `$e` in `Dialogue.parseDialogueString` but does
+/// nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused), so
+/// adding or removing one changes nothing in the game. Mirrors TS
+/// `isDialogueEnd`.
+fn is_dialogue_end(token: &str) -> bool {
+    token.starts_with("#$e")
+        && token
+            .chars()
+            .nth(3)
+            .is_some_and(|c| matches!(c, '#' | '$' | '*'))
 }
 
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors
@@ -441,8 +454,10 @@ fn dialogue_command_consequence(token: &str) -> Option<&'static str> {
             "It starts a new dialogue box, so the text would be split into boxes differently.",
         );
     }
-    if token.starts_with("#$e") && page_marker {
-        return Some("It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.");
+    if is_dialogue_end(token) {
+        return Some(
+            "The game skips this command, so the dialogue plays the same. Fine if intended.",
+        );
     }
     if token.starts_with("#$action")
         || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
@@ -484,6 +499,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
     }
     if token == "_" {
         return "It separates the question, answers, and replies of a quick question; without it the game mixes them up.";
+    }
+    if token == "[#]" && !missing && !difference.is_error() {
+        return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
     }
     if token == "[#]" {
         return if missing {
@@ -637,7 +655,8 @@ fn token_severity(
         // A missing placeholder only drops its value; a renamed or extra one
         // stays visible as literal `{{...}}` or breaks string.Format.
         || (dropped && is_placeholder(token))
-        || (dropped && token.to_ascii_lowercase().starts_with("[articlefor"));
+        || (dropped && token.to_ascii_lowercase().starts_with("[articlefor"))
+        || is_dialogue_end(token);
     if harmless {
         Severity::Warning
     } else {
@@ -648,6 +667,77 @@ fn token_severity(
 /// Every protected-token count that differs between source and target.
 /// Soft tokens (newlines, quote delimiters) are deliberately excluded.
 pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
+    mail_differences(source, target).unwrap_or_else(|| text_differences(source, target))
+}
+
+const MAIL_TITLE: &str = "[#]";
+
+/// A letter: the game shows only the text before the first `[#]`, split into
+/// a male and a female version at its first bare `¦`, and the letter
+/// collection shows the text after it as the title, unprocessed
+/// (`LetterViewerMenu`, `CollectionsPage`; SDV 1.6). Text after a second
+/// `[#]` never appears. So for an English letter with one `[#]` only the
+/// letter text is compared, per player gender; a missing title stays an
+/// error and extra `[#]` are a note. Mirrors TS `mailDifferences`.
+fn mail_differences(source: &str, target: &str) -> Option<Vec<TokenDifference>> {
+    if source.matches(MAIL_TITLE).count() != 1 {
+        return None;
+    }
+    let target_titles = target.matches(MAIL_TITLE).count();
+    if target_titles == 0 {
+        return None;
+    }
+    let source_views = gender_views(source.split(MAIL_TITLE).next().unwrap_or_default());
+    let target_views = gender_views(target.split(MAIL_TITLE).next().unwrap_or_default());
+    let mut merged: Vec<TokenDifference> = Vec::new();
+    for index in 0..source_views.len().max(target_views.len()) {
+        let source_view = source_views[index.min(source_views.len() - 1)];
+        let target_view = target_views[index.min(target_views.len() - 1)];
+        for difference in text_differences(source_view, target_view) {
+            let delta = |item: &TokenDifference| item.source_count.abs_diff(item.target_count);
+            match merged
+                .iter_mut()
+                .find(|known| known.token == difference.token)
+            {
+                Some(known) if delta(&difference) > delta(known) => *known = difference,
+                Some(_) => {}
+                None => merged.push(difference),
+            }
+        }
+    }
+    if target_titles > 1 {
+        merged.push(TokenDifference {
+            token: MAIL_TITLE.to_string(),
+            source_count: 1,
+            target_count: target_titles,
+            severity: Severity::Warning,
+        });
+    }
+    merged.sort_by(|left, right| left.token.cmp(&right.token));
+    Some(merged)
+}
+
+/// The male and female letter text: the game splits at the first `¦` outside
+/// a `${…}$` switch. A text without one reads the same for both.
+fn gender_views(body: &str) -> Vec<&str> {
+    let mut depth = 0usize;
+    let mut rest = body.char_indices().peekable();
+    while let Some((byte, char)) = rest.next() {
+        let tail = &body[byte..];
+        if tail.starts_with("${") {
+            depth += 1;
+            rest.next();
+        } else if depth > 0 && tail.starts_with("}$") {
+            depth -= 1;
+            rest.next();
+        } else if depth == 0 && char == '¦' {
+            return vec![&body[..byte], &body[byte + char.len_utf8()..]];
+        }
+    }
+    vec![body]
+}
+
+fn text_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     let mut source_counts = counts(source);
     let mut target_counts = counts(target);
     // A switch removed (languages without grammatical gender) or added (the

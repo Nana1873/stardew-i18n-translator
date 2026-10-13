@@ -257,8 +257,17 @@ export function tokenSeverity(
     // A missing placeholder only drops its value; a renamed or extra one
     // stays visible as literal `{{...}}` or breaks string.Format.
     (dropped && isPlaceholder(token)) ||
-    (dropped && token.toLowerCase().startsWith("[articlefor"));
+    (dropped && token.toLowerCase().startsWith("[articlefor")) ||
+    isDialogueEnd(token);
   return harmless ? "warning" : "error";
+}
+
+/** `#$e#`: SDV 1.6 recognizes `$e` in `Dialogue.parseDialogueString` but does
+ * nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused), so
+ * adding or removing one changes nothing in the game. Mirrors Rust
+ * `is_dialogue_end`. */
+export function isDialogueEnd(token: string): boolean {
+  return /^#\$e[#$*]/.test(token);
 }
 
 /** Shape identities compare each well-formed switch as one block. They aren't
