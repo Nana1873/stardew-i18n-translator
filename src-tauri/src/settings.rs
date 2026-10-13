@@ -443,9 +443,13 @@ fn normalize_workspace(mut workspace: WorkspaceSettings) -> WorkspaceSettings {
     if !matches!(workspace.string_scope.as_str(), "mod" | "all") {
         workspace.string_scope = default_string_scope();
     }
+    if workspace.status_filter == "has-value" {
+        // Removed filter: older settings files may still store it.
+        workspace.status_filter = default_status_filter();
+    }
     if !matches!(
         workspace.status_filter.as_str(),
-        "all" | "untranslated" | "translated" | "outdated" | "review-needed" | "has-value"
+        "all" | "untranslated" | "translated" | "outdated" | "review-needed"
     ) {
         workspace.status_filter = default_status_filter();
     }
@@ -523,6 +527,13 @@ mod tests {
                 4
             );
         }
+    }
+
+    #[test]
+    fn removed_has_value_status_filter_loads_as_all() {
+        let body = r#"{"workspace":{"statusFilter":"has-value"}}"#;
+        let settings = parse_and_normalize(body, false).unwrap();
+        assert_eq!(settings.workspace.status_filter, "all");
     }
 
     #[test]

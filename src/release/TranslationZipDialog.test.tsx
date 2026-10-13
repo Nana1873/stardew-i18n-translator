@@ -32,11 +32,33 @@ const PREVIEW: ZipPreview = {
 };
 
 describe("TranslationZipDialog", () => {
+  it("keeps ZIP settings open while a folder is typed", () => {
+    render(
+      <TranslationZipDialog
+        preview={{ ...PREVIEW, versionConflicts: [] }}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const settings = screen
+      .getByText("ZIP settings")
+      .closest("details") as HTMLDetailsElement;
+    expect(settings.open).toBe(false);
+    // An empty folder needs attention and opens the settings; a valid one
+    // must not close them again under the user's cursor.
+    const folder = screen.getAllByRole("textbox").at(-1)!;
+    fireEvent.change(folder, { target: { value: "" } });
+    expect(settings.open).toBe(true);
+    fireEvent.change(folder, { target: { value: "Fixed" } });
+    expect(settings.open).toBe(true);
+  });
   it("previews included paths, omissions and version conflicts", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -46,7 +68,7 @@ describe("TranslationZipDialog", () => {
     );
     expect(screen.getByText("[CP] Sample/i18n/de.json")).toBeInTheDocument();
     const dialog = screen.getByRole("dialog", {
-      name: "Export translation ZIP",
+      name: "Export translations",
     });
     expect(dialog).toHaveTextContent(PREVIEW.packageName);
     // Named by its visible heading; focusable itself as the focus fallback.
@@ -63,7 +85,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -94,7 +115,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={{ ...PREVIEW, versionConflicts: [] }}
-        componentCount={1}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -102,7 +122,9 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     fireEvent.change(screen.getByLabelText("Install folder"), {
       target: { value: "Original Package/[CP] Sample" },
     });
@@ -130,7 +152,6 @@ describe("TranslationZipDialog", () => {
             },
           ],
         }}
-        componentCount={1}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -138,9 +159,11 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     expect(
-      container.querySelector(".desktop-zip-files code")?.textContent,
+      container.querySelector(".desktop-xd-details code")?.textContent,
     ).toBe(" [CP] Sample/i18n/de.json");
     fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, []);
@@ -148,7 +171,7 @@ describe("TranslationZipDialog", () => {
       target: { value: " Original Package\\[CP] Sample" },
     });
     expect(
-      container.querySelector(".desktop-zip-files code")?.textContent,
+      container.querySelector(".desktop-xd-details code")?.textContent,
     ).toBe(" Original Package/[CP] Sample/i18n/de.json");
     fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, [
@@ -172,7 +195,6 @@ describe("TranslationZipDialog", () => {
           ],
         }}
         combined
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -209,7 +231,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={{ ...PREVIEW, versionConflicts: [], problems: [problem] }}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={inspect}
@@ -219,7 +240,7 @@ describe("TranslationZipDialog", () => {
     );
     expect(screen.getByText(/1 string stays in English/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open hello" }));
     expect(inspect).toHaveBeenCalledWith(problem);
   });
 
@@ -228,7 +249,6 @@ describe("TranslationZipDialog", () => {
     const { container } = render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -255,7 +275,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building
         onInspect={vi.fn()}
@@ -265,7 +284,7 @@ describe("TranslationZipDialog", () => {
     );
 
     const dialog = screen.getByRole("dialog", {
-      name: "Export translation ZIP",
+      name: "Export translations",
     });
     expect(dialog).toHaveAttribute("aria-busy", "true");
     expect(

@@ -1,5 +1,11 @@
-import { X } from "lucide-react";
-import { ExportCounts, LeftOutStrings } from "./ExportOverview";
+import {
+  ExportCounts,
+  ExportDialogHead,
+  ExportSection,
+  LeftOutStrings,
+} from "./ExportOverview";
+import { FolderInput } from "lucide-react";
+import { useState } from "react";
 import type { ComponentProps, KeyboardEventHandler, RefObject } from "react";
 import type { ExportConfirmDialog } from "../export/ExportConfirmDialog";
 
@@ -26,6 +32,8 @@ export function ExportConfirmBody({
   blockingValidationAvailable = false,
   onInspectProblem,
   lastExportLabel,
+  chooser,
+  switching = false,
   onConfirm,
   onCancel,
   dialogRef,
@@ -43,12 +51,37 @@ export function ExportConfirmBody({
       : path;
   };
   const targetCount = existingFiles + newFiles;
+  const targetPaths = [...existingTargetPaths, ...newTargetPaths];
+  const [showAllPaths, setShowAllPaths] = useState(false);
+  const modCount = mods ?? 1;
+  const baseName = (path: string) =>
+    path.replace(/\\/g, "/").split("/").pop() ?? path;
+
+  const writeSentence = (
+    <>
+      {existingFiles > 0 && (
+        <>
+          Replaces {existingFiles} existing{" "}
+          {existingFiles === 1 ? "translation file" : "translation files"}
+        </>
+      )}
+      {existingFiles > 0 && newFiles > 0 && " and creates "}
+      {existingFiles === 0 && newFiles > 0 && "Creates "}
+      {newFiles > 0 && (
+        <>
+          {newFiles} new{" "}
+          {newFiles === 1 ? "translation file" : "translation files"}
+        </>
+      )}
+      {targetCount === 0 && "No translation files to write"}.
+    </>
+  );
 
   return (
     <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="translator-flow-dialog translator-export-dialog desktop-export-dialog"
+        className="translator-flow-dialog desktop-xd"
         role="dialog"
         aria-modal="true"
         aria-labelledby="translator-export-title"
@@ -56,156 +89,151 @@ export function ExportConfirmBody({
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
-        <div className="translator-flow-head">
+        <ExportDialogHead
+          titleId="translator-export-title"
+          subject={
+            mods != null ? `${mods} ${mods === 1 ? "mod" : "mods"}` : modName
+          }
+          language={targetLanguage}
+          closeLabel="Cancel export"
+          onClose={onCancel}
+        />
+        {chooser}
+
+        <div className="desktop-xd-dest">
+          <FolderInput aria-hidden="true" />
           <div>
-            <h2 className="translator-heading" id="translator-export-title">
-              Export translation JSON
-            </h2>
-            <div className="translator-kicker">
-              <span>{modName}</span>
-              {targetLanguage && (
-                <span className="desktop-export-language">
-                  {targetLanguage}
-                </span>
-              )}
-            </div>
-          </div>
-          <button
-            className="translator-icon-button"
-            type="button"
-            aria-label="Cancel export"
-            onClick={onCancel}
-          >
-            <X aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="translator-flow-body">
-          <>
-            <ExportCounts
-              label="Export contents"
-              included={willWrite}
-              untranslated={openOmitted}
-              needsReview={attention}
-              keptOnPurpose={acceptedMismatches}
-            />
-
-            <LeftOutStrings
-              problems={omitted}
-              target="export"
-              showModNames={(mods ?? 1) > 1}
-              onInspect={onInspectProblem}
-            />
-
-            <div className="desktop-export-write">
-              <p id="translator-export-summary">
-                {existingFiles > 0 && (
-                  <>
-                    Replaces <strong>{existingFiles}</strong> existing{" "}
-                    {existingFiles === 1
-                      ? "translation file"
-                      : "translation files"}
-                  </>
+            <p className="desktop-xd-dest-title">
+              Writes directly into your Mods folder
+              {modCount > 1 && <span> · into {modCount} mod folders</span>}
+            </p>
+            {targetPaths.length > 0 ? (
+              <ul className="desktop-xd-dest-paths" title={modsRoot}>
+                {(showAllPaths ? targetPaths : targetPaths.slice(0, 1)).map(
+                  (path) => (
+                    <li key={path}>
+                      <code>Mods/{displayPath(path)}</code>
+                    </li>
+                  ),
                 )}
-                {existingFiles > 0 && newFiles > 0 && " and creates "}
-                {existingFiles === 0 && newFiles > 0 && "Creates "}
-                {newFiles > 0 && (
-                  <>
-                    <strong>{newFiles}</strong> new{" "}
-                    {newFiles === 1 ? "translation file" : "translation files"}
-                  </>
+                {targetPaths.length > 1 && (
+                  <li>
+                    <button
+                      className="desktop-xd-link desktop-xd-dest-more"
+                      type="button"
+                      aria-expanded={showAllPaths}
+                      onClick={() => setShowAllPaths((value) => !value)}
+                    >
+                      {showAllPaths
+                        ? "Show fewer"
+                        : `+${targetPaths.length - 1} more`}
+                    </button>
+                  </li>
                 )}
-                {targetCount === 0 && "No translation files to write"}.
+              </ul>
+            ) : (
+              <p className="desktop-xd-dest-note">
+                No translation files to write.
               </p>
-              <p className="desktop-export-muted">
-                Writes directly to the installed Mods folders.
-                {existingFiles > 0 &&
-                  " Existing files are backed up as .json.bak."}
-              </p>
-            </div>
-
-            {modsRoot && (
-              <div className="desktop-export-location">
-                <span>Mods folder</span>
-                <code>{modsRoot}</code>
-              </div>
             )}
-          </>
-
-          <details className="desktop-export-details">
-            <summary>
-              Details
-              {targetCount > 0 && (
-                <span>
-                  {targetCount} {targetCount === 1 ? "file" : "files"}
-                </span>
-              )}
-            </summary>
-            <div className="desktop-export-details-body">
-              {mods != null && (
-                <p>
-                  {mods} {mods === 1 ? "mod" : "mods"} included.
-                </p>
-              )}
-              {existingTargetPaths.length > 0 && (
-                <div>
-                  <strong>Files to replace</strong>
-                  <ul>
-                    {existingTargetPaths.map((path) => (
-                      <li key={path}>
-                        <code title={path}>{displayPath(path)}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {newTargetPaths.length > 0 && (
-                <div>
-                  <strong>New files</strong>
-                  <ul>
-                    {newTargetPaths.map((path) => (
-                      <li key={path}>
-                        <code title={path}>{displayPath(path)}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {existingTargetPaths.length === 0 &&
-                newTargetPaths.length === 0 && (
-                  <p>The file list appears after export.</p>
-                )}
-              {
-                <>
-                  {attention != null && attention > 0 && (
-                    <p>
-                      {reviewIncluded} in Review, {changedIncluded} Changed.
-                      Export keeps their status.
-                    </p>
-                  )}
-                  {openOmitted != null && openOmitted > 0 && (
-                    <p>
-                      Untranslated strings are omitted so the game can use the
-                      English source.
-                    </p>
-                  )}
-                  <p>
-                    Counts reflect the current scan. Files are checked again
-                    before writing.
-                    {blockingValidationAvailable &&
-                      omitted.length === 0 &&
-                      " Tokens checked."}
-                    {existingFiles > 0 &&
-                      " A failed write rolls back the affected files and backups."}
-                  </p>
-                </>
-              }
-              {lastExportLabel && <p>{lastExportLabel}</p>}
-            </div>
-          </details>
+            <p className="desktop-xd-dest-note">
+              {targetCount > 1
+                ? "The game uses them on the next start."
+                : "The game uses it on the next start."}
+              {existingFiles === 1 &&
+                ` The existing ${baseName(existingTargetPaths[0] ?? "") || "file"} is backed up first (.json.bak).`}
+              {existingFiles > 1 &&
+                ` ${existingFiles} existing files are backed up first (.json.bak).`}
+            </p>
+          </div>
         </div>
 
-        <div className="translator-flow-foot">
+        <div className="desktop-xd-body" aria-busy={switching || undefined}>
+          <ExportCounts
+            label="Export contents"
+            included={willWrite}
+            untranslated={openOmitted}
+            leftOut={omitted.length}
+            needsReview={attention}
+            keptOnPurpose={acceptedMismatches}
+          />
+
+          <LeftOutStrings
+            problems={omitted}
+            target="export"
+            showModNames={(mods ?? 1) > 1}
+            onInspect={onInspectProblem}
+            disabled={switching}
+          />
+
+          <div className="desktop-xd-sections">
+            <ExportSection
+              title="Details"
+              summary={writeSentence}
+              summaryId="translator-export-summary"
+            >
+              <div className="desktop-xd-details">
+                {mods != null && (
+                  <p>
+                    {mods} {mods === 1 ? "mod" : "mods"} included.
+                  </p>
+                )}
+                {existingTargetPaths.length > 0 && (
+                  <div>
+                    <strong>Files to replace</strong>
+                    <ul>
+                      {existingTargetPaths.map((path) => (
+                        <li key={path}>
+                          <code title={path}>{displayPath(path)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {newTargetPaths.length > 0 && (
+                  <div>
+                    <strong>New files</strong>
+                    <ul>
+                      {newTargetPaths.map((path) => (
+                        <li key={path}>
+                          <code title={path}>{displayPath(path)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {existingTargetPaths.length === 0 &&
+                  newTargetPaths.length === 0 && (
+                    <p>The file list appears after export.</p>
+                  )}
+                {attention != null && attention > 0 && (
+                  <p>
+                    {reviewIncluded} in Review, {changedIncluded} Changed.
+                    Export keeps their status.
+                  </p>
+                )}
+                {openOmitted != null && openOmitted > 0 && (
+                  <p>
+                    Untranslated strings are omitted so the game can use the
+                    English source.
+                  </p>
+                )}
+                <p>
+                  Counts reflect the current scan. Files are checked again
+                  before writing.
+                  {blockingValidationAvailable &&
+                    omitted.length === 0 &&
+                    " Tokens checked."}
+                  {existingFiles > 0 &&
+                    " A failed write rolls back the affected files and backups."}
+                </p>
+                {lastExportLabel && <p>{lastExportLabel}</p>}
+              </div>
+            </ExportSection>
+          </div>
+        </div>
+
+        <div className="desktop-xd-foot">
           <button
             className="translator-button translator-button-quiet"
             type="button"
@@ -217,8 +245,13 @@ export function ExportConfirmBody({
             className="translator-button translator-button-primary"
             type="button"
             onClick={onConfirm}
+            disabled={switching}
           >
-            {existingFiles > 0 ? "Export and replace" : "Export JSON"}
+            {switching
+              ? "Checking…"
+              : existingFiles > 0
+                ? "Replace in Mods folder"
+                : "Export to Mods folder"}
           </button>
         </div>
       </section>

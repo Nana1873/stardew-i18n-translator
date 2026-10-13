@@ -14,6 +14,7 @@ export async function releaseCases(h) {
     element,
     fill,
     absent,
+    expandSection,
     screenshot,
     openEntry,
     saveEntry,
@@ -315,7 +316,7 @@ export async function releaseCases(h) {
         '[role="dialog"][aria-labelledby="translator-zip-title"]',
       );
       await element(preview);
-      await click(css(".desktop-zip-details summary"));
+      await expandSection("Details");
       await waitFor("combined preview includes pending work", async () => {
         const text = await (await element(preview)).getText();
         return (

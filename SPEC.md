@@ -174,7 +174,11 @@ Parser-insignificant `$r` header spaces are ignored and malformed `#$b*` prefix
 recovery is bounded. The [shared token fixtures](tests/fixtures/README.md)
 exercise the same extraction rules in TypeScript and Rust.
 
-Export is explicit and applies to the current mod or all scanned mods:
+Export is explicit and applies to the current mod or all scanned mods. One
+**Files… > Export…** dialog asks for the scope (**This mod** or **All mods**)
+and the output (**ZIP** or **JSON** into the Mods folder), then shows the
+matching preview. It opens on This mod + ZIP (All mods without a selected
+mod) and keeps the last choice for the session. JSON export:
 
 - Omit empty targets and strings with unaccepted token errors so SMAPI falls
   back to `default.json`. Non-empty Done, Review, and Changed values are
@@ -211,7 +215,7 @@ Results retain the actual destination and filename for **Show file** and
 ZIP replacement is confirmed by the native Windows Save dialog, without a
 second app confirmation. Canceling the picker leaves the existing archive
 unchanged; a confirmed build replaces it only after the new archive is complete.
-**Files… > Export ZIP for all mods…** previews and writes one translation ZIP,
+**Export…** with **All mods** and **ZIP** previews and writes one translation ZIP,
 with the package name **Stardew Translator Output**, for all
 scanned components with effective target-language values in the configured Mods
 folder. A package the scan had to skip in whole or in part is left out and named

@@ -86,8 +86,7 @@ import {
 } from "../shortcuts";
 
 export type StringTableScope = "mod" | "all";
-export type StringTableFilter =
-  StringStatus | "all" | "has-value" | "needs-review";
+export type StringTableFilter = StringStatus | "all" | "needs-review";
 export type StringTableNoticeTone = "info" | "success" | "error";
 
 export interface StringTableSummary {
@@ -279,7 +278,6 @@ const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
 
 const FILTER_LABEL: Record<StringTableFilter, string> = {
   all: "All",
-  "has-value": "Has target text",
   "needs-review": "Needs review",
   untranslated: DISPLAY_STATUS.untranslated.label,
   translated: DISPLAY_STATUS.translated.label,
@@ -962,9 +960,7 @@ export function StringTable({
         !effectiveIssuesOnly &&
         (effectiveStatus === "needs-review"
           ? row.status !== "review-needed" && row.status !== "outdated"
-          : effectiveStatus === "has-value"
-            ? !hasTranslation(row.source, row.target, row.status)
-            : effectiveStatus !== "all" && row.status !== effectiveStatus)
+          : effectiveStatus !== "all" && row.status !== effectiveStatus)
       ) {
         return;
       }
@@ -2698,9 +2694,6 @@ export function StringTable({
               <span>
                 {[
                   identityFilterLabel,
-                  effectiveStatus === "has-value"
-                    ? FILTER_LABEL[effectiveStatus]
-                    : null,
                   `${visible.length} of ${data.length} ${data.length === 1 ? "string" : "strings"} shown`,
                 ]
                   .filter(Boolean)
@@ -2749,7 +2742,7 @@ export function StringTable({
                     target,
                     status === "needs-review"
                       ? "Review and Changed translations that need checking."
-                      : STATUS_HELP[status === "has-value" ? "all" : status],
+                      : STATUS_HELP[status],
                   )
                 }
                 onHideHelp={hideStatusHelp}

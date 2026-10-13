@@ -10,6 +10,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- The four export entries in the Files menu are now one **Export…** entry.
+  Its dialog asks for **This mod** or **All mods** and for **ZIP** or
+  **JSON**, then shows the preview for that choice. It starts on This mod
+  and ZIP and remembers your last choice until the app closes. JSON export
+  now says plainly that it writes directly into your Mods folder and shows
+  the target file; its button reads **Export to Mods folder** or **Replace
+  in Mods folder**. Strings left out because of token errors are shown in
+  red, and ZIP settings and details fold away until you need them.
+
 - Glossaries are built only from the game's own `Content/Strings` files; the
   app no longer reads a `Content (unpacked)` folder or points to
   StardewXnbHack. Community language packs take their English names from the
@@ -126,6 +135,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   `Pkg/config.json` or `Mod/optional` inside another mod, is listed in the scan
   as "mod folder the game doesn't load". A folder link no longer hides the
   real mod folder it points to.
+- The unreachable "Has target text" string filter is removed; a saved workspace
+  that still stores it opens with the All filter.
 - A glossary built in Settings shows its hints in the editor right away,
   also when Settings is then closed without saving, instead of only after a
   restart.
