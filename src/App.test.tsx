@@ -4130,6 +4130,58 @@ describe("App shell", () => {
     );
   });
 
+  it("does not let the workspace autosave write the previous Mods folder during a settings save", async () => {
+    let releaseSave!: () => void;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "pick_folder") return Promise.resolve("E:/Other/Mods");
+      if (cmd === "scan_mods") return Promise.resolve(EMPTY_SCAN);
+      if (cmd === "save_settings") {
+        const { settings } = args as { settings: AppSettings };
+        // Keep the workspace autosave retrying, so it is due while the
+        // explicit save of the new Mods folder is still running.
+        if (settings.modsPath === CONFIGURED.modsPath) {
+          return Promise.reject(
+            "An export or settings update is already running. Wait for it to finish and try again.",
+          );
+        }
+        if (!releaseSave) {
+          return new Promise<null>((resolve) => {
+            releaseSave = () => resolve(null);
+          });
+        }
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ modsPath: CONFIGURED.modsPath }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change Mods folder" }));
+    await screen.findByText("E:/Other/Mods");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(releaseSave).toBeDefined());
+    const saveStarted = invokeMock.mock.calls.length;
+    // Longer than the 350 ms autosave retry delay.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)));
+    await act(async () => releaseSave());
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/Other/Mods",
+        targetLang: "de",
+      }),
+    );
+    const laterSaves = invokeMock.mock.calls
+      .slice(saveStarted)
+      .filter(([cmd]) => cmd === "save_settings")
+      .map(([, args]) => (args as { settings: AppSettings }).settings.modsPath);
+    expect(laterSaves).not.toContain(CONFIGURED.modsPath);
+  });
+
   it("does not apply or rescan a language when settings persistence fails", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
