@@ -341,6 +341,7 @@ function exportMod(
       outdated,
       reviewNeeded: review,
       orphanKeys: [],
+      removedRegionalFiles: [],
     });
     if (written > 0) result.filesWritten += 1;
     result.totalWrittenKeys += written;

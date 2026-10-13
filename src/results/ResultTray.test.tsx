@@ -334,6 +334,75 @@ describe("ResultTray", () => {
     },
   );
 
+  it("says in plain words which regional files an export removed", () => {
+    const written = {
+      relativeDir: "i18n",
+      written: true,
+      removed: false,
+      backedUp: true,
+      writtenKeys: 1,
+      untranslated: 0,
+      outdated: 0,
+      reviewNeeded: 0,
+      orphanKeys: [],
+    };
+    renderTray({
+      kind: "export",
+      title: "All mods",
+      collapsed: false,
+      pending: false,
+      error: null,
+      modsChanged: 2,
+      retry: { kind: "all" },
+      result: {
+        files: [
+          {
+            ...written,
+            targetPath: "C:\\Games\\Mods\\First\\i18n\\de.json",
+            removedRegionalFiles: [
+              {
+                path: "C:\\Games\\Mods\\First\\i18n\\de-DE.json",
+                shownPath: "Mods/First/i18n/de-DE.json",
+                backedUp: true,
+              },
+            ],
+          },
+          {
+            ...written,
+            targetPath: "C:/Games/Mods/Second/i18n/pt.json",
+            removedRegionalFiles: [
+              {
+                path: "C:/Games/Mods/Second/i18n/pt-BR.json",
+                shownPath: "Mods/Second/i18n/pt-BR.json",
+                backedUp: false,
+              },
+            ],
+          },
+        ],
+        skipped: [],
+        filesWritten: 2,
+        filesRemoved: 0,
+        totalWrittenKeys: 2,
+        totalUntranslated: 0,
+        totalOutdated: 0,
+        totalReviewNeeded: 0,
+        totalOrphanKeys: 0,
+      },
+      problems: [],
+    });
+
+    expect(
+      screen.getByText(
+        "Also removed Mods/First/i18n/de-DE.json (backed up as de-DE.json.bak), because the game would prefer it over de.json.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Also removed Mods/Second/i18n/pt-BR.json, because the game would prefer it over pt.json.",
+      ),
+    ).toBeVisible();
+  });
+
   it.each([
     ["complete", 5, null, "AI translation complete", null],
     ["cancelled", 2, null, "AI translation cancelled", "is-warning"],

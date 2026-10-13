@@ -373,6 +373,17 @@ export interface ExportFileResult {
   /** The target already held this content; it was not rewritten and its
    * existing `.bak` was kept. Counts as written. */
   unchanged?: boolean;
+  /** Regional files such as `de-DE.json` removed beside the target, because
+   * the game would read them before `de.json`. */
+  removedRegionalFiles?: RemovedRegionalFile[];
+}
+
+export interface RemovedRegionalFile {
+  path: string;
+  /** The same file relative to the Mods folder, e.g. `Mods/<Mod>/i18n/de-DE.json`. */
+  shownPath: string;
+  /** A `<file>.bak` backup was made before removing it. */
+  backedUp: boolean;
 }
 
 export interface ExportResult {
