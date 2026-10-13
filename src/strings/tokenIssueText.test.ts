@@ -134,7 +134,7 @@ describe("describeTokenIssue", () => {
         token: "#$B#",
       },
     ]);
-    // Without the correct command missing, only the suggestion is given.
+    // Without the correct command missing, nothing is suggested.
     expect(
       describeTokenIssue(
         [{ token: "$Q", sourceCount: 0, targetCount: 1, severity: "error" }],
@@ -145,7 +145,7 @@ describe("describeTokenIssue", () => {
         severity: "error",
         kind: "added",
         message:
-          "$Q is not a dialogue command the game knows, so it would show as text. Did you mean $q?",
+          "$Q is not a dialogue command the game knows, so it would show as text.",
         token: "$Q",
       },
     ]);

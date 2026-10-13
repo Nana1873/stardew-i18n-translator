@@ -145,17 +145,30 @@ function dialogueCommandConsequence(token: string): string | null {
   return null;
 }
 
-/** One finding for a dialogue command typed in the wrong letter case,
- * together with the correct command it replaced when that one is missing.
+/** One finding for a dialogue command typed in the wrong letter case. Only
+ * when the correct command is missing from the translation is it suggested.
  * Mirrors Rust `case_variant_message`. */
 function caseVariantMessage(
   token: string,
-  suggestion: string,
   partner: TokenDifference | undefined,
 ): string {
-  const text = `${token} is not a dialogue command the game knows, so it would show as text. Did you mean ${partner?.token ?? suggestion}?`;
-  const purpose = partner ? dialogueCommandConsequence(partner.token) : null;
-  return purpose ? `${text} ${purpose}` : text;
+  const text = `${token} is not a dialogue command the game knows, so it would show as text.`;
+  if (!partner) return text;
+  const purpose = dialogueCommandConsequence(partner.token);
+  const suggestion = `${text} Did you mean ${partner.token}?`;
+  return purpose ? `${suggestion} ${purpose}` : suggestion;
+}
+
+/** Whether the wrong-case command accounts for every missing copy of its
+ * partner; otherwise the partner keeps its own message for the rest. */
+function coversPartner(
+  difference: TokenDifference,
+  partner: TokenDifference,
+): boolean {
+  return (
+    partner.sourceCount - partner.targetCount <=
+    difference.targetCount - difference.sourceCount
+  );
 }
 
 /** What a token difference does in the game, as one sentence. Errors name
@@ -297,14 +310,14 @@ export function describeTokenIssue(
         : null;
     if (suggestion !== null) {
       const partner = caseVariantPartner(differences, suggestion);
-      if (partner) merged.add(partner);
+      if (partner && coversPartner(difference, partner)) merged.add(partner);
       messages.push({
         severity:
           difference.severity === "error" || partner?.severity === "error"
             ? "error"
             : "warning",
         kind: "added",
-        message: caseVariantMessage(token, suggestion, partner),
+        message: caseVariantMessage(token, partner),
         token,
       });
       continue;

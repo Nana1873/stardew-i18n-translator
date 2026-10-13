@@ -253,8 +253,8 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
             .flatten();
         if let Some(suggestion) = suggestion {
             let partner = case_variant_partner(differences, &suggestion);
-            merged.extend(partner);
-            messages.push(case_variant_message(token, &suggestion, partner));
+            merged.extend(partner.filter(|partner| covers_partner(difference, partner)));
+            messages.push(case_variant_message(token, partner));
             continue;
         }
         if switch_damaged
@@ -406,22 +406,27 @@ fn case_variant_partner<'a>(
     })
 }
 
-/// One finding for a dialogue command typed in the wrong letter case, together
-/// with the correct command it replaced when that one is missing. Mirrors TS
-/// `caseVariantMessage`.
-fn case_variant_message(
-    token: &str,
-    suggestion: &str,
-    partner: Option<&TokenDifference>,
-) -> String {
-    let meant = partner.map_or(suggestion, |item| item.token.as_str());
-    let text = format!(
-        "{token} is not a dialogue command the game knows, so it would show as text. Did you mean {meant}?"
-    );
-    match partner.and_then(|item| dialogue_command_consequence(&item.token)) {
-        Some(purpose) => format!("{text} {purpose}"),
-        None => text,
+/// One finding for a dialogue command typed in the wrong letter case. Only
+/// when the correct command is missing from the translation is it suggested.
+/// Mirrors TS `caseVariantMessage`.
+fn case_variant_message(token: &str, partner: Option<&TokenDifference>) -> String {
+    let text =
+        format!("{token} is not a dialogue command the game knows, so it would show as text.");
+    let Some(partner) = partner else {
+        return text;
+    };
+    let suggestion = format!("{text} Did you mean {}?", partner.token);
+    match dialogue_command_consequence(&partner.token) {
+        Some(purpose) => format!("{suggestion} {purpose}"),
+        None => suggestion,
     }
+}
+
+/// Whether the wrong-case command accounts for every missing copy of its
+/// partner; otherwise the partner keeps its own message for the rest. Mirrors
+/// TS `coversPartner`.
+fn covers_partner(difference: &TokenDifference, partner: &TokenDifference) -> bool {
+    partner.source_count - partner.target_count <= difference.target_count - difference.source_count
 }
 
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors

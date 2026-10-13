@@ -1084,7 +1084,31 @@
     {
       "source": "Hi.",
       "target": "Hallo.$K",
-      "text": "$K is not a dialogue command the game knows, so it would show as text. Did you mean $k?"
+      "text": "$K is not a dialogue command the game knows, so it would show as text."
+    },
+    {
+      "source": "Hi a lot.",
+      "target": "Hallo $A lot.",
+      "text": "$A is not a dialogue command the game knows, so it would show as text."
+    },
+    {
+      "source": "Hi.#$b#Bye.#$b#Ok",
+      "target": "Hallo.#$B#Tschuess. Ok",
+      "differences": [
+        {
+          "token": "#$B#",
+          "sourceCount": 0,
+          "targetCount": 1,
+          "severity": "error"
+        },
+        {
+          "token": "#$b#",
+          "sourceCount": 2,
+          "targetCount": 0,
+          "severity": "error"
+        }
+      ],
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently. #$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently."
     },
     {
       "source": "Fine.",
