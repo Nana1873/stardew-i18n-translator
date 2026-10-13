@@ -819,26 +819,24 @@ fn original_regional_file(target_path: &str) -> Option<PathBuf> {
     scanner::regional_target_variant(Path::new(target_path)).filter(|path| path.is_file())
 }
 
-/// One plain line telling the user to delete a mod's regional files after
-/// installing the ZIP, since the game reads them before `<lang>.json`.
+/// One plain line for the translator who builds the ZIP: players who install
+/// it must delete the original mod's regional files, since the game reads
+/// them before `<lang>.json`. Players never see the app, so the translator
+/// has to pass this on.
 fn regional_file_hint(regional: &[PathBuf], mods_path: &Path, target_lang: &str) -> Option<String> {
     let shown = regional
         .iter()
         .map(|path| crate::export::shown_path(path, mods_path))
         .collect::<Vec<_>>();
     let (last, rest) = shown.split_last()?;
-    let (names, pronoun, object) = if rest.is_empty() {
-        (last.clone(), "it", "that file")
+    let (names, pronoun) = if rest.is_empty() {
+        (last.clone(), "it")
     } else {
-        (
-            format!("{} and {last}", rest.join(", ")),
-            "them",
-            "those files",
-        )
+        (format!("{} and {last}", rest.join(", ")), "them")
     };
     Some(format!(
-        "The original mod also has {names}. The game prefers {pronoun} over {target_lang}.json, \
-         so after installing this ZIP, delete {object} or some texts stay as before."
+        "The original mod has its own {names}, which the game prefers over {target_lang}.json. \
+         Tell players to delete {pronoun} after installing this ZIP, for example on your mod page."
     ))
 }
 
@@ -2079,9 +2077,9 @@ mod tests {
         assert_eq!(
             preview.regional_file_hints,
             vec![
-                "The original mod also has Mods/Sample Pack/[CP] Sample/i18n/de-DE.json. \
-                 The game prefers it over de.json, so after installing this ZIP, delete \
-                 that file or some texts stay as before."
+                "The original mod has its own Mods/Sample Pack/[CP] Sample/i18n/de-DE.json, \
+                 which the game prefers over de.json. Tell players to delete it after \
+                 installing this ZIP, for example on your mod page."
                     .to_string()
             ]
         );
@@ -2126,7 +2124,7 @@ mod tests {
         let preview = preview_output(&config).unwrap();
         assert_eq!(preview.regional_file_hints.len(), 1);
         assert!(preview.regional_file_hints[0]
-            .starts_with("The original mod also has Mods/Example/i18n/de-DE.json."));
+            .starts_with("The original mod has its own Mods/Example/i18n/de-DE.json,"));
         assert!(preview
             .warnings
             .iter()
@@ -2159,9 +2157,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             hint,
-            "The original mod also has Mods/Pack/A/i18n/pt-BR.json and \
-             Mods/Pack/B/i18n/pt-BR.json. The game prefers them over pt.json, so after \
-             installing this ZIP, delete those files or some texts stay as before."
+            "The original mod has its own Mods/Pack/A/i18n/pt-BR.json and \
+             Mods/Pack/B/i18n/pt-BR.json, which the game prefers over pt.json. Tell \
+             players to delete them after installing this ZIP, for example on your mod page."
         );
     }
 

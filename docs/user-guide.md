@@ -214,8 +214,9 @@ For flat locale files, export writes `i18n/<code>.json`, for example
 `i18n/pt-BR.json` or `i18n/zh-CN.json`, is accepted on import. Export backs it
 up and removes it, because the game would read it before `<code>.json`, and the
 result names the removed file. Translation ZIPs never include or remove such a
-file; if the original mod has one, the ZIP preview names it so you can delete
-it after installing the ZIP. Otherwise some texts stay as before. Split
+file. If the original mod has one, the ZIP preview names it: tell players to
+delete it after installing your ZIP, for example on your mod page, or the game
+keeps showing some of its texts. Split
 document names such as `i18n/de/pt.json` are kept literally.
 
 For a combined translation archive, choose **Files… > Export…** with **All

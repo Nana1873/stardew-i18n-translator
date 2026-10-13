@@ -82,7 +82,7 @@ describe("TranslationZipDialog", () => {
 
   it("shows regional file hints as plain information that blocks nothing", () => {
     const hint =
-      "The original mod also has Mods/Sample Pack/[CP] Sample/i18n/de-DE.json. The game prefers it over de.json, so after installing this ZIP, delete that file or some texts stay as before.";
+      "The original mod has its own Mods/Sample Pack/[CP] Sample/i18n/de-DE.json, which the game prefers over de.json. Tell players to delete it after installing this ZIP, for example on your mod page.";
     const { rerender } = render(
       <TranslationZipDialog
         preview={{
@@ -113,7 +113,7 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/The original mod also has/)).toBeNull();
+    expect(screen.queryByText(/The original mod has its own/)).toBeNull();
   });
 
   it("updates the safe filename when the package version is corrected", () => {

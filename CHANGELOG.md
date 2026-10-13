@@ -133,7 +133,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   them up and remove them, and the result and Activity log now name each
   removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs never
   include or remove them; when the original mod has one, the ZIP preview names
-  it and suggests telling players to delete it after installing the ZIP.
+  it so the translator can tell players, for example on the mod page, to
+  delete it after installing the ZIP.
 - The unreachable "Has target text" string filter is removed; a saved workspace
   that still stores it opens with the All filter.
 - A glossary built in Settings shows its hints in the editor right away,

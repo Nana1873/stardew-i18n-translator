@@ -187,7 +187,9 @@ name it in the result tray and Activity log relative to the Mods folder.
 Translation ZIPs never contain a regional file and do not change or remove
 files in the Mods folder. When the original mod still has one, the ZIP preview
 shows one plain, non-blocking line per mod naming it relative to the Mods
-folder and asking the user to delete it after installing the ZIP. Split
+folder. It addresses the translator building the ZIP, since players who install
+it never see the app: tell players to delete that file after installing, for
+example on the mod page. Split
 document names are literal and do not trigger this language-filename
 migration. Existing targets, including omitted orphan keys, remain recoverable
 from their export backup.
