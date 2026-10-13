@@ -423,10 +423,19 @@ export interface ExportPreflightProblem {
   reason: string;
 }
 
+export interface ExportPlannedFile {
+  modUniqueId: string;
+  targetPath: string;
+  action: "create" | "replace" | "remove" | "unchanged";
+}
+
 export interface ExportPreflight {
   acceptedMismatches: number;
   /** Strings the export will leave out because of game-breaking token errors. */
   omitted: ExportPreflightProblem[];
+  /** What the export would do with each target file; files it would not
+   *  touch at all are not listed. */
+  files: ExportPlannedFile[];
 }
 
 /** Validate the exact selected export scope without changing any files. */

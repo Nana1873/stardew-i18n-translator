@@ -672,15 +672,25 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
     let mut prepared = PreparedPackage {
         preview: ZipPreview {
             package_name: "Stardew Translator Output".into(),
-            selected_version: String::new(), version_source: String::new(), version_conflicts: Vec::new(),
+            selected_version: String::new(),
+            version_source: String::new(),
+            version_conflicts: Vec::new(),
             default_file_name: format!("Stardew Translator Output - {language}.zip"),
-            target_lang: language.clone(), target_language: language.clone(),
-            entries: Vec::new(), omitted_components: Vec::new(),
-            warnings: vec!["Includes current local translations across the scanned mods, with saved working translations taking priority. Untranslated and obsolete keys are omitted.".into()],
-            problems: Vec::new(), regional_file_hints: Vec::new(),
-            total_strings: 0, total_source_strings: 0,
+            target_lang: language.clone(),
+            target_language: crate::language::target_language_name(&language)
+                .unwrap_or(&language)
+                .to_string(),
+            entries: Vec::new(),
+            omitted_components: Vec::new(),
+            warnings: Vec::new(),
+            problems: Vec::new(),
+            regional_file_hints: Vec::new(),
+            total_strings: 0,
+            total_source_strings: 0,
         },
-        entries: Vec::new(), source_checks: Vec::new(), left_out: skipped.clone(),
+        entries: Vec::new(),
+        source_checks: Vec::new(),
+        left_out: skipped.clone(),
     };
     if !skipped.is_empty() {
         prepared.preview.warnings.push(format!(
@@ -1497,6 +1507,13 @@ mod tests {
         let destination = root.join("output.zip");
         let preview = preview_output(&config).unwrap();
         assert_eq!(preview.total_strings, 7);
+        // The dialog header reads "German (de)" like the other exports, with
+        // no extra note the counts already say.
+        assert_eq!(preview.target_language, "German");
+        assert!(!preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("working translations")));
         assert_eq!(
             preview
                 .entries
