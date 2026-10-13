@@ -10,8 +10,6 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
-- A `manifest.json` inside another mod's folder is no longer offered for
-  translation; the game does not load it, so the scan lists it as information.
 - Glossaries are built only from the game's own `Content/Strings` files; the
   app no longer reads a `Content (unpacked)` folder or points to
   StardewXnbHack. Community language packs take their English names from the
@@ -120,6 +118,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A mod folder the game never loads is no longer offered for translation or
+  used as a glossary language pack. The game stops looking inside a folder
+  once it holds any file other than readmes, text files, images or archives,
+  so a `manifest.json` below such a folder, for example `Pkg/[CP] X` next to
+  `Pkg/config.json` or `Mod/optional` inside another mod, is listed in the scan
+  as "mod folder the game doesn't load". A folder link no longer hides the
+  real mod folder it points to.
 - A glossary built in Settings shows its hints in the editor right away,
   also when Settings is then closed without saving, instead of only after a
   restart.
