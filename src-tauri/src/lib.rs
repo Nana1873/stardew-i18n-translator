@@ -1496,6 +1496,9 @@ fn build_glossary(
         |error| log::error!(target: "app", "build_glossary({target_lang}) failed: {error}"),
     )?;
     glossary::save(&config, &built)?;
+    // A rebuilt glossary replaces any unmigratable pre-1.4 `glossary.json`.
+    glossary::migrate_legacy_cache(&config);
+    glossary::remove_legacy_cache(&config);
     Ok(glossary::GlossaryInfo::of(&built))
 }
 
@@ -1523,7 +1526,9 @@ fn glossary_status(
         load_active_glossary(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
-    let outdated_cache = glossary::legacy_cache_present(&config);
+    // It only needs a rebuild while this language has no current glossary;
+    // otherwise the note would never go away.
+    let mut outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
@@ -1538,6 +1543,11 @@ fn glossary_status(
     let pack_xnb_available = detected
         .as_ref()
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
+    // A language the game lacks can only be rebuilt from a language pack;
+    // without one, a rebuild note could never be acted on.
+    if glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none() {
+        outdated_cache = false;
+    }
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
         source_available: glossary::source_available(stardew),

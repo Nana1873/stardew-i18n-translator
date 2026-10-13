@@ -8,6 +8,22 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- Setup uses plainer words, groups target languages by whether the game
+  includes them or needs a language mod, and mentions that a Mod Organizer 2
+  mods folder works too. The glossary step names its state, such as "Glossary
+  ready" or "Rebuild your glossary", and its build buttons no longer compete
+  with Finish.
+
+### Fixed
+
+- Setup and the Settings glossary page no longer recommend a rebuild when a
+  glossary file from before version 1.4 is still in the data folder but a
+  current glossary exists, or when no rebuild is possible because the game
+  lacks the language and no language pack is installed. Building the glossary
+  now removes that old file.
+
 ## [2.5.0] - 2026-10-13
 
 ### Changed

@@ -66,6 +66,29 @@ const SETUP_DIALOG =
   /^(Welcome to Stardew i18n Translator|Configure your workspace)$/;
 
 describe("SetupWizard", () => {
+  it("groups target languages by whether the game includes them", async () => {
+    render(<SetupWizard initial={null} onComplete={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    const select = screen.getByLabelText("Target language");
+    const groups = [...select.querySelectorAll("optgroup")];
+    expect(groups.map((group) => group.label)).toEqual([
+      "In the game",
+      "Needs a language mod in the game",
+    ]);
+    expect(groups[0]).toHaveTextContent("German (de)");
+    expect(groups[1]).toHaveTextContent("Thai (th)");
+    expect(groups[0]).not.toHaveTextContent("Thai (th)");
+  });
+
   it("does not reuse a previous folder validation while a new folder is being checked", async () => {
     let finishValidation!: (valid: boolean) => void;
     invokeMock.mockImplementation((cmd: string) => {
@@ -190,7 +213,7 @@ describe("SetupWizard", () => {
 
     expect(
       await screen.findByText(
-        /The game’s Content\/Strings files were not found\. Check the Stardew Valley folder/,
+        /The game's text files \(Content\/Strings\) were not found\. Check the Stardew Valley folder/,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /StardewXnbHack/ })).toBeNull();
@@ -235,10 +258,15 @@ describe("SetupWizard", () => {
       );
       render(<SetupWizard initial={null} onComplete={() => {}} />);
       await gotoGlossaryStep("th");
+      expect(await screen.findByText("Glossary ready")).toBeVisible();
+      expect(screen.getByText(/7 official names are ready/)).toBeVisible();
       expect(
-        await screen.findByText("Cached glossary available"),
+        screen.getByText(
+          sourceAvailable
+            ? /needs the community language pack/
+            : /needs the game.s text files/,
+        ),
       ).toBeVisible();
-      expect(screen.getByText(/7 cached terms remain available/)).toBeVisible();
       expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
       expect(screen.queryByText("No glossary for this language")).toBeNull();
     },
@@ -282,7 +310,7 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep("th");
 
-    expect(await screen.findByText(/7 official terms/)).toBeInTheDocument();
+    expect(await screen.findByText(/7 official names/)).toBeInTheDocument();
     expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
   });
 
@@ -317,7 +345,7 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
-    expect(await screen.findByText(/42 official terms/)).toBeInTheDocument();
+    expect(await screen.findByText(/42 official names/)).toBeInTheDocument();
   });
 
   it("offers Cancel only when settings already exist", () => {
