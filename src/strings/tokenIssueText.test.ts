@@ -115,4 +115,48 @@ describe("describeTokenIssue", () => {
     // Without a token difference there is nothing to explain.
     expect(describeTokenIssue([], "＄｛＾｝＄")).toEqual([]);
   });
+
+  it("explains a dialogue command in the wrong letter case as one finding", () => {
+    expect(
+      describeTokenIssue(
+        [
+          { token: "#$B#", sourceCount: 0, targetCount: 1, severity: "error" },
+          { token: "#$b#", sourceCount: 1, targetCount: 0, severity: "error" },
+        ],
+        "Hallo.#$B#Tschuess.",
+      ),
+    ).toEqual([
+      {
+        severity: "error",
+        kind: "added",
+        message:
+          "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently.",
+        token: "#$B#",
+      },
+    ]);
+    // Without the correct command missing, only the suggestion is given.
+    expect(
+      describeTokenIssue(
+        [{ token: "$Q", sourceCount: 0, targetCount: 1, severity: "error" }],
+        "Hallo$Q",
+      ),
+    ).toEqual([
+      {
+        severity: "error",
+        kind: "added",
+        message:
+          "$Q is not a dialogue command the game knows, so it would show as text. Did you mean $q?",
+        token: "$Q",
+      },
+    ]);
+    // A capitalized word after $ that is not a command stays generic.
+    expect(
+      describeTokenIssue(
+        [{ token: "$Euro", sourceCount: 0, targetCount: 1, severity: "error" }],
+        "5$Euro",
+      )[0]?.message,
+    ).toBe(
+      "$Euro is not in the English text. The game would show it as text or change the dialogue flow.",
+    );
+  });
 });

@@ -241,8 +241,22 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         );
         switch_damaged = true;
     }
+    // A wrong-case command and the correct one it replaced are one finding.
+    let mut merged: Vec<&TokenDifference> = Vec::new();
     for difference in differences {
         let token = difference.token.as_str();
+        if merged.iter().any(|item| std::ptr::eq(*item, difference)) {
+            continue;
+        }
+        let suggestion = (difference.target_count > difference.source_count)
+            .then(|| case_variant_command(token))
+            .flatten();
+        if let Some(suggestion) = suggestion {
+            let partner = case_variant_partner(differences, &suggestion);
+            merged.extend(partner);
+            messages.push(case_variant_message(token, &suggestion, partner));
+            continue;
+        }
         if switch_damaged
             && (matches!(token, "${" | "}$")
                 || is_gender_switch_shape(token)
@@ -346,6 +360,93 @@ fn difference_message(difference: &TokenDifference) -> String {
     format!("{token} {change}. {}", token_consequence(difference))
 }
 
+/// Dialogue command names the game knows (Stardew 1.6 `Dialogue.cs`). The
+/// game matches them case-sensitively, so `$B` is shown as text. Mirrors TS
+/// `DIALOGUE_COMMANDS`.
+const DIALOGUE_COMMANDS: [&str; 19] = [
+    "a", "action", "b", "c", "d", "e", "h", "k", "l", "neutral", "p", "q", "query", "r", "s", "t",
+    "u", "v", "y",
+];
+
+/// The correct-case form of a token that is a known dialogue command typed in
+/// the wrong letter case, e.g. `#$B#` -> `#$b#` or `$Q` -> `$q`. Mirrors TS
+/// `caseVariantCommand`.
+fn case_variant_command(token: &str) -> Option<String> {
+    let (prefix, rest) = if let Some(rest) = token.strip_prefix("#$") {
+        ("#$", rest)
+    } else {
+        ("$", token.strip_prefix('$')?)
+    };
+    let name_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_alphabetic())
+        .count();
+    let name = &rest[..name_len];
+    let lower = name.to_ascii_lowercase();
+    if name == lower || !DIALOGUE_COMMANDS.contains(&lower.as_str()) {
+        return None;
+    }
+    Some(format!("{prefix}{lower}{}", &rest[name_len..]))
+}
+
+/// The missing token that a wrong-case command most likely replaced: the
+/// correct form itself, or that command with its arguments. Mirrors TS
+/// `caseVariantPartner`.
+fn case_variant_partner<'a>(
+    differences: &'a [TokenDifference],
+    suggestion: &str,
+) -> Option<&'a TokenDifference> {
+    differences.iter().find(|item| {
+        item.target_count < item.source_count
+            && (item.token == suggestion
+                || item
+                    .token
+                    .strip_prefix(suggestion)
+                    .is_some_and(|rest| rest.starts_with(' ')))
+    })
+}
+
+/// One finding for a dialogue command typed in the wrong letter case, together
+/// with the correct command it replaced when that one is missing. Mirrors TS
+/// `caseVariantMessage`.
+fn case_variant_message(
+    token: &str,
+    suggestion: &str,
+    partner: Option<&TokenDifference>,
+) -> String {
+    let meant = partner.map_or(suggestion, |item| item.token.as_str());
+    let text = format!(
+        "{token} is not a dialogue command the game knows, so it would show as text. Did you mean {meant}?"
+    );
+    match partner.and_then(|item| dialogue_command_consequence(&item.token)) {
+        Some(purpose) => format!("{text} {purpose}"),
+        None => text,
+    }
+}
+
+/// What a dialogue break or command does, or `None` for other tokens. Mirrors
+/// TS `dialogueCommandConsequence`.
+fn dialogue_command_consequence(token: &str) -> Option<&'static str> {
+    let page_marker = token
+        .chars()
+        .nth(3)
+        .is_some_and(|c| matches!(c, '#' | '$' | '*'));
+    if token.starts_with("#$b") && page_marker {
+        return Some(
+            "It starts a new dialogue box, so the text would be split into boxes differently.",
+        );
+    }
+    if token.starts_with("#$e") && page_marker {
+        return Some("It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.");
+    }
+    if token.starts_with("#$action")
+        || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
+    {
+        return Some("The game needs it to run the dialogue (answers, flags, or events).");
+    }
+    None
+}
+
 /// What a token difference does in the game, as one sentence. Errors name the
 /// consequence; warnings end with "Fine if intended." Mirrors TS
 /// `tokenConsequence` word for word.
@@ -360,17 +461,8 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
             "Fine if intended."
         };
     }
-    let page_marker = chars.get(3).is_some_and(|c| matches!(c, '#' | '$' | '*'));
-    if token.starts_with("#$b") && page_marker {
-        return "It starts a new dialogue box, so the text would be split into boxes differently.";
-    }
-    if token.starts_with("#$e") && page_marker {
-        return "It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.";
-    }
-    if token.starts_with("#$action")
-        || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
-    {
-        return "The game needs it to run the dialogue (answers, flags, or events).";
+    if let Some(command) = dialogue_command_consequence(token) {
+        return command;
     }
     if token.starts_with("%item") || token.starts_with("%action") {
         return if missing {
@@ -1498,6 +1590,20 @@ mod tests {
         token_differences(source, target)
             .iter()
             .any(|difference| difference.target_count < difference.source_count)
+    }
+
+    #[test]
+    fn case_variant_command_only_matches_known_commands_in_the_wrong_case() {
+        assert_eq!(case_variant_command("#$B#").as_deref(), Some("#$b#"));
+        assert_eq!(case_variant_command("#$E$").as_deref(), Some("#$e$"));
+        assert_eq!(case_variant_command("$Q").as_deref(), Some("$q"));
+        assert_eq!(
+            case_variant_command("#$Action AddMoney 5#").as_deref(),
+            Some("#$action AddMoney 5#")
+        );
+        assert_eq!(case_variant_command("#$b#"), None);
+        assert_eq!(case_variant_command("$Euro"), None);
+        assert_eq!(case_variant_command("{{B}}"), None);
     }
 
     #[test]

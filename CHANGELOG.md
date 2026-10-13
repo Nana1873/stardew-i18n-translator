@@ -334,6 +334,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A Local AI server that is not running stops the run after the first attempt
   with the "Could not reach Local AI" message, also when the connection times
   out, instead of being treated as a slow model.
+- A dialogue command typed in the wrong letter case, such as `#$B#` instead of
+  `#$b#`, is now explained as one problem: the game does not know it and
+  shows it as text, followed by "Did you mean #$b#?". Before, the editor and
+  the export named it as an extra command the dialogue needs and the correct
+  one as missing.
 
 ## [2.4.0] - 2026-10-11
 
