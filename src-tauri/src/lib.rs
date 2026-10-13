@@ -2227,7 +2227,7 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
         failures.push("ChatGPT took too long");
     }
     if skips.refused {
-        failures.push("ChatGPT refused to review some of them");
+        failures.push("ChatGPT refused the review");
     }
     let failures = (!failures.is_empty()).then(|| failures.join(", "));
     let cause = match (failures, skips.too_long) {
@@ -2334,7 +2334,7 @@ mod review_warning_tests {
         refused.absorb(timeout);
         assert_eq!(
             review_skipped_warning(AiRunOutcome::Complete, refused).unwrap(),
-            "The quality check didn't finish for 3 texts (ChatGPT took too long, ChatGPT refused to review some of them). Their drafts are in Review; please check them."
+            "The quality check didn't finish for 3 texts (ChatGPT took too long, ChatGPT refused the review). Their drafts are in Review; please check them."
         );
     }
 }
