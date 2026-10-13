@@ -68,7 +68,9 @@ does not imply this intent. Protected-token validation still applies.
   file is read as one mod, and nothing inside it is searched. The Mods folder
   itself is never a mod, even with a `manifest.json` in it. Files SMAPI
   ignores are those starting with `.`, readmes and documents (`.md`, `.txt`,
-  `.doc`, `.docx`, `.rtf`), images, archives, backups (`.bak`, `.old`,
+  `.doc`, `.docx`, `.rtf`), the image formats `.bmp`, `.gif`, `.ico`, `.jpeg`,
+  `.jpg`, `.png`, `.psd`, `.tif` and `.xcf`, the archives `.rar`, `.zip`, `.7z`
+  and `.tar`, backups (`.bak`, `.old`,
   `.backup`), shortcuts (`.url`, `.lnk`), `desktop.ini`, `Thumbs.db`,
   `.DS_Store`, `._*`, and `__folder_managed_by_vortex`; it also skips folders
   named `__MACOSX` or `mcs`. So `Pkg/[CP] X` and `Pkg/[JA] X` both load when
