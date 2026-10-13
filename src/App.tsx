@@ -272,6 +272,7 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const workspaceHydratedRef = useRef(false);
+  const settingsWritesInFlightRef = useRef(0);
   settingsRef.current = settings;
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -766,6 +767,10 @@ export function App() {
     async function saveWorkspace() {
       const latest = settingsRef.current;
       if (!active || !latest) return;
+      if (settingsWritesInFlightRef.current > 0) {
+        timer = window.setTimeout(() => void saveWorkspace(), 350);
+        return;
+      }
       const workspace = {
         selectedModId,
         modSearch: modQuery,
@@ -875,12 +880,19 @@ export function App() {
   }
 
   async function persist(next: AppSettings) {
+    // The workspace autosave waits while this write runs and sees its result
+    // before React re-renders, so it never writes back the previous folders or
+    // language over the settings the user just saved.
+    settingsWritesInFlightRef.current += 1;
     try {
       await saveSettings(next);
     } catch (error) {
       logFrontendError("saveSettings", String(error));
       throw error;
+    } finally {
+      settingsWritesInFlightRef.current -= 1;
     }
+    settingsRef.current = next;
     if (settings?.targetLang !== next.targetLang) {
       setOperationHistory((current) =>
         current.map((entry) => ({ ...entry, canUndo: false })),
