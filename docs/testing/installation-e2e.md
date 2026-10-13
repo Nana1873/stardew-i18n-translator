@@ -13,7 +13,7 @@ alongside its real Local AI/ChatGPT, load and layout checks.
 
 The previous release is downloaded from the exact URL and checked against the
 SHA-256 in [upgrade-baseline.json](../../scripts/desktop-e2e/upgrade-baseline.json).
-Currently the baseline is 2.0.3. To work offline, supply `-UpgradeFromZip` with
+Currently the baseline is 2.4.0. To work offline, supply `-UpgradeFromZip` with
 that same archive; a different hash fails. Update the baseline deliberately when
 the supported upgrade path changes. One tested baseline does not certify every
 historical version or downgrade.
@@ -33,7 +33,7 @@ historical version or downgrade.
 3. Start the real previous EXE with empty data. Use native setup pickers, scan a
    synthetic mod, save a manual translation and import a real batch into Review.
    Change a source fixture while the app is closed and reopen to obtain Changed;
-   retain a blank pair (Open in 2.0.3, corrected to Done in 2.1.0). Save workspace
+   retain a blank pair, which counts as Done. Save workspace
    selection/filter/search and close with an unsaved draft.
 4. Follow the documented update procedure: back up the closed old installation,
    extract the new release separately and copy the complete `data/` beside it.

@@ -5,6 +5,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -34,7 +35,6 @@ export async function installCases(h) {
     openEntry,
     saveEntry,
     native,
-    browseFolder,
     closeNormally,
   } = h;
   const baseline = await json(
@@ -42,18 +42,36 @@ export async function installCases(h) {
   );
   assert.equal(
     baseline.version,
-    "2.0.3",
+    "2.4.0",
     "Review the previous-version selectors when changing the baseline.",
   );
-  const oldStatus = (name) =>
+  // 2.4.0 already uses the current filter buttons and Files menu; only its
+  // setup and scan dialogs are labelled differently.
+  const oldStatus = (name) => button(name);
+  // 2.4.0 labels the setup pickers "Browse..." with three dots.
+  const oldBrowseFolder = (label) =>
     By.xpath(
-      '//button[contains(concat(" ", normalize-space(@class), " "), " translator-filter ")][normalize-space(text())=' +
-        JSON.stringify(name) +
-        "]",
+      `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse…" or normalize-space(.)="Browse..."]`,
     );
+  const setupDialog = css(
+    '[role="dialog"][aria-labelledby="translator-setup-title"], [role="dialog"][aria-label="Setup"]',
+  );
+  const scanDialog = css(
+    '[role="dialog"][aria-labelledby="translator-scan-title"], [role="dialog"][aria-label="Scan"]',
+  );
   const chooseOldBatch = async (file) => {
-    await click(css('button[aria-label="Import LLM batch"]'));
-    await click(button("Choose file…"));
+    await click(button("Export …"));
+    await click(
+      By.xpath(
+        '//button[@role="menuitem"][.//span[normalize-space(.)="Import LLM batch…"]]',
+      ),
+    );
+    // 2.4.0 writes "Choose file …" with a space.
+    await click(
+      By.xpath(
+        '//button[normalize-space(.)="Choose file…" or normalize-space(.)="Choose file …"]',
+      ),
+    );
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
   };
@@ -100,13 +118,29 @@ export async function installCases(h) {
     await walk(root);
     return files;
   }
+  // 2.4.0 opens the scan report only when something needs a look. Every scan
+  // rewrites its source snapshot, so a new file version also marks the end.
+  const snapshotVersion = async () => {
+    try {
+      const info = await stat(join(oldData, "scan-source-snapshot.json"));
+      return info.mtimeMs;
+    } catch {
+      return 0;
+    }
+  };
   const rescan = async () => {
+    const before = await snapshotVersion();
     await click(css('[aria-label="Scan mods"]'));
-    await element(css('[aria-label="Latest scan result"]'));
-    await click(css('[aria-label="Close scan"]'));
-    await absent(
-      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
-    );
+    const report = await waitFor("scan finished", async () => {
+      if (
+        (await driver.findElements(css('[aria-label="Latest scan result"]')))
+          .length
+      )
+        return "report";
+      return (await snapshotVersion()) > before ? "snapshot" : false;
+    });
+    if (report === "report") await click(css('[aria-label="Close scan"]'));
+    await absent(scanDialog);
   };
   let savedState, savedSettings, oldFiles, backupFiles;
   evidence.installation = { passed: false, cleanWindows: false, baseline };
@@ -198,10 +232,10 @@ export async function installCases(h) {
   await step("install-old-version-create-real-work", async () => {
     assert.equal(await exists(join(oldData, "settings.json")), false);
     await launch(oldExe);
-    await click(browseFolder("Stardew Valley folder"));
+    await click(oldBrowseFolder("Stardew Valley folder"));
     await native("pick", "Select your Stardew Valley folder", h.game);
     await click(button("Next"));
-    await click(browseFolder("Mods folder"));
+    await click(oldBrowseFolder("Mods folder"));
     await native("pick", "Select your Mods folder", mods);
     await click(button("Next"));
     await (
@@ -209,11 +243,8 @@ export async function installCases(h) {
     ).sendKeys("German", Key.ENTER);
     await click(button("Next"));
     await click(button("Finish"));
-    await absent(
-      css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
-    );
+    await absent(setupDialog);
     await rescan();
-    await click(button("Workspace"));
     await click(css('[data-tree-id="mod:E2E.UpgradeSmoke"]'));
     await saveEntry("manual", manual);
     await saveEntry("changed", changed);
@@ -257,7 +288,6 @@ export async function installCases(h) {
     source.changed = "Changed source @.";
     await writeFile(sourcePath, JSON.stringify(source));
     await launch(oldExe);
-    await click(button("Workspace"));
     await click(css('[data-tree-id="mod:E2E.UpgradeSmoke"]'));
     await click(oldStatus("All"));
     await waitFor(
@@ -268,7 +298,7 @@ export async function installCases(h) {
     );
     assert.equal(
       await (await element(row("blank"))).getAttribute("data-status"),
-      "untranslated",
+      "translated",
     );
     await click(oldStatus("Review"));
     await fill(css('[aria-label="Search strings"]'), "review");

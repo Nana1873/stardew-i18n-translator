@@ -292,7 +292,7 @@ it.each(["greeting", "bye"])(
     expect(input).toHaveFocus();
     fireEvent.click(
       screen.getByRole("button", {
-        name: /^(Save|Save edited suggestion|Approve suggestion)$/,
+        name: /^(Save|Save edit|Approve suggestion)$/,
       }),
     );
     await waitFor(() =>

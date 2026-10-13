@@ -1463,6 +1463,15 @@ fn smapi_relevant_file(name: &str) -> bool {
         && !smapi_ignored_name(name)
 }
 
+/// Files Mod Organizer 2 keeps in its own `mods` folder but never shows the
+/// game: each mod's `meta.ini` and files it hid with `.mohidden`. When the
+/// Mods folder is MO2's `mods` folder, SMAPI sees each mod's contents without
+/// them, so they must not stop the search like a mod's own file would.
+fn mo2_only_file(name: &str, top_level: bool) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".mohidden") || (top_level && name == "meta.ini")
+}
+
 /// SMAPI's `ModScanner.IsRelevant` for a folder, plus its dot-folder skip.
 fn smapi_relevant_folder(name: &str) -> bool {
     !name.starts_with('.') && !smapi_ignored_name(name)
@@ -1561,6 +1570,7 @@ impl<'a> SmapiModFolders<'a> {
         }
         // An unreadable folder counts as searchable, so its components stay
         // offered; the walk already reports the read problem.
+        let top_level = folder.parent() == Some(self.root);
         let mut found: Option<bool> = None;
         for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
             let is_file = entry.file_type().is_ok_and(|file_type| {
@@ -1569,7 +1579,7 @@ impl<'a> SmapiModFolders<'a> {
                         && std::fs::metadata(entry.path()).is_ok_and(|meta| meta.is_file()))
             });
             let name = entry.file_name().to_string_lossy().into_owned();
-            if is_file && smapi_relevant_file(&name) {
+            if is_file && smapi_relevant_file(&name) && !mo2_only_file(&name, top_level) {
                 let is_manifest = name.eq_ignore_ascii_case("manifest.json");
                 found = Some(found.unwrap_or(false) || is_manifest);
             }
@@ -2555,6 +2565,34 @@ mod tests {
         assert_eq!(
             note.reason,
             "Mods/Pkg/__MACOSX/X has a manifest.json, but the game doesn't load it because it skips folders named __MACOSX."
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn mod_organizer_mods_folder_is_searched_like_the_game_sees_it() {
+        // MO2's `mods` folder: each entry holds `meta.ini` next to the mod
+        // folder it shows the game, and hidden files end in `.mohidden`.
+        let root = crate::test_support::temp_dir("scan-mo2-mods-folder");
+        let entry = root.join("Better Mod (Nexus 123)");
+        write(&entry.join("meta.ini"), "[General]");
+        write(&entry.join("old.dll.mohidden"), "x");
+        write_component(&entry.join("BetterMod"), "Better Mod");
+        // A separator entry holds only meta.ini.
+        write(&root.join("Base_separator").join("meta.ini"), "[General]");
+        // Deeper down, meta.ini is an ordinary file of the mod.
+        write(&root.join("Pkg").join("Inner").join("meta.ini"), "x");
+        write_component(&root.join("Pkg").join("Inner").join("[CP] X"), "[CP] X");
+
+        let result = scan_mods(&root, "de", &root);
+
+        let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Better Mod"]);
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Pkg/Inner/[CP] X/manifest.json"
         );
 
         std::fs::remove_dir_all(&root).ok();

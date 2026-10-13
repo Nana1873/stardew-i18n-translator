@@ -8,343 +8,137 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-13
+
 ### Changed
 
 - The four export entries in the Files menu are now one **Export…** entry.
   Its dialog asks for **This mod** or **All mods** and for **ZIP** or
-  **JSON**, then shows the preview for that choice. It starts on This mod
-  and ZIP and remembers your last choice until the app closes. JSON export
-  now says plainly that it writes directly into your Mods folder and shows
-  the target file; its button reads **Export to Mods folder** or **Replace
-  in Mods folder**. Strings left out because of token errors are shown in
-  red, and ZIP settings and details fold away until you need them.
-
+  **JSON**, then shows the preview for that choice. It starts on This mod and
+  ZIP and remembers your last choice until the app closes. JSON export says
+  plainly that it writes directly into your Mods folder and shows the target
+  file. Strings left out because of token errors are shown in red, each with
+  an Open issue button. While a preview is prepared, the choices show a busy
+  pointer, because they can only change once it is ready.
+- The Files menu lists **Export LLM batch** next to Import LLM batch. It takes
+  every Open or Changed string of the selected mod.
+- Texts across the app are plainer: explanations, status lines, dialogs and
+  error messages say what happened and what to do, without internal terms.
+  Feature, button and menu names are unchanged.
+- The scan result is calmer: one sentence says whether everything is ready,
+  changes since the last scan are one line, and each problem is a card with
+  its details folded away. The mod list header shows one matching "Needs
+  attention" count, and the automatic scan at start no longer opens the report
+  when it only skipped a component.
 - Glossaries are built only from the game's own `Content/Strings` files; the
   app no longer reads a `Content (unpacked)` folder or points to
-  StardewXnbHack. Community language packs take their English names from the
-  same game files. When a game file is missing or cannot be read, the message
-  names that file and says this language may not be available in this game
-  version.
-- Community language packs that split their `content.json` into other files
-  with Content Patcher's `Include` are now recognized: they are left out of
-  the mods to translate and can supply a glossary.
-- The automatic scan at start no longer opens the scan report when it only
-  skips a component; the header's "Needs attention" button shows it. Repeated
-  scans without changes share one Activity log line.
-- Opening another mod resets the status and Issues filters to All, and Issues
-  stays clickable with "No validation findings in this scope." when empty.
-- An intentionally blank translation is named next to the field in the editor,
-  and the editor's status badge uses the table's colors and labels.
-- Reasons for skipped mods are full sentences, and internal errors ask to be
-  reported with the Activity log.
-- Dialogs are named by their visible heading and take focus reliably; issue
-  markers have short names and a larger target.
-- Dialogue placeholders the game fills in, such as `%spouse`, `%farm`,
-  `%kid1`, or `%time`, and `%noturn` are now checked. A missing, extra, or
-  renamed one is a note that says what the game puts there, never an error.
-  A percent sign such as `50%` is not a placeholder.
-- The note about full-width characters now appears for notes too, covers
-  `＃＠％［］` as well as `＄｛｝＾`, and names the characters found. It only
-  appears when a missing or changed token uses them, so `％` or `［］` as
-  ordinary punctuation no longer trigger it.
-- `{{ name }}`, `{{name}}`, and `{{Name}}` count as the same placeholder,
-  like in the game.
-- Extra spaces between the arguments of any dialogue command, such as
-  `#$q 305/306  null#`, no longer count as a token error; the game ignores
-  them.
-- Dropping `[ArticleFor [SuggestedItem]]` while keeping `[SuggestedItem]` is
-  only a note about the lost article, without an extra error.
-- The editor and the export now read unusual spaces inside tokens the same
-  way.
-- Opening Issues fits the columns to the window when saved widths would push
-  the issue icons out of view.
-- The Settings Glossary page says that built glossaries are saved right away,
-  without Save changes, and shows source and cache status as readable
-  chips.
-
-- Texts across the app are plainer: explanations, status lines, dialog text
-  and error messages say what happened and what to do, without internal terms.
-  Token findings read, for example, "{{Preis}} is not in the English text. The
-  game would show it as raw text." instead of raw counts. Feature, button and
-  menu names are unchanged.
-- The Files menu lists Import LLM batch and a new Export LLM batch together.
-  Export LLM batch takes every Open or Changed string of the selected mod. The
-  JSON and ZIP entries both list the selected mod first.
-- The JSON and ZIP export dialogs share one layout and count the same way:
-  translations included and strings not translated yet, then the strings left
-  out with an Open issue button for each, then target and options.
-- The editor's issue box is compact, and its titles say how to get past a
-  token error ("Must fix or Save anyway"). Save sits as a framed button beside
-  Save & next, and the token warning makes Return to editor the primary action.
-- Translate with AI explains why it does not apply to Done and Review strings
-  instead of staying silently disabled.
-- An intentionally blank translation shows as "(left blank)" in the table, and
-  a dot marks 100% coverage that still has strings to check in Review or
-  Changed.
-- Smaller layout fixes: the mod list keeps its Coverage header at narrow
-  widths and hides the Nexus column when no mod has an ID, the header subline
-  uses separators, the selection button shows that it opens a menu, saved
-  column widths that no longer fit are fitted on open, each scan leaves one
-  activity line, ChatGPT settings show a custom model ID under its select, and
-  a damaged settings file shows one calm card with Retry and Open logs folder.
-
-- The mod list header shows one "Needs attention" count that matches the scan
-  result, instead of separate skipped and warning counters.
-- The scan result is calmer: one sentence says whether everything is ready,
-  changes since the last scan are one line, and each problem is explained in
-  plain words with the technical details folded away. Expected exclusions such
-  as community language packs collapse into one quiet line.
-- One mod the scan has to skip no longer turns off the comparison of changed
-  and new English strings for every other mod. The skipped mod keeps its
-  previous baseline and is compared again once it scans cleanly.
-- A changed bare `^` or `#` is a note instead of a token error, so the string
-  is exported. In dialogue they split pages and genders, but in letters `^` is a
-  line break and in UI strings `#` is ordinary text, so the translator decides.
-  It stays an error when it puts two different portraits on one page, and the
-  `#` before a `$y` quick response stays protected, like `#$b#`.
-- Every token finding now says what it does in the game, for example that a
-  missing `[#]` shows the letter title as part of the letter text or that a
-  missing `%item … %%` means the attached item is not given. Notes end with
-  "Fine if intended."; the export and ZIP results use the same sentences as
-  the editor.
-- Removing every he/she switch (for languages without grammatical gender) or
-  adding one where the English text has none no longer reports tokens repeated
-  in every branch as missing or added; the editor's token chips count the
-  same way. A collapsed switch with `#$b#` in each branch, for example, is no
-  longer a token error, so the string is exported.
-- The arguments of a dialogue command that opens a string are protected:
-  changed question ids such as `$q 305/306 null#` or a renamed one-time flag
-  such as `$1 metHarvey#` are token errors instead of passing silently.
-- Token chips in the editor now show their severity: a red circle marks a
-  difference that keeps the string English on export, a yellow triangle a
-  harmless note. The validation line groups errors before notes and names the
-  consequence once per group.
-- The string editor keeps a fixed width and height while paging through
-  strings, so Prev/Next and Save & next no longer move with the content.
-- Shortcuts for editor commands can no longer be bound to bare typing keys
-  such as Backspace, Delete, Space, or the arrow keys; existing bindings of
-  that kind fall back to the default. Plain keys typed in a text field never
-  trigger editor commands.
-- A Local AI connection failure is reported in one sentence with the next
-  step instead of the raw transport error.
+  StardewXnbHack. Community language packs that use Content Patcher's
+  `Include` are recognized. The Settings Glossary page shows source and cache
+  status as chips and says that built glossaries are saved right away.
+- Every token finding says what it does in the game, for example that a
+  missing `[#]` shows the letter title inside the letter, in the same words
+  and order in the editor, Issues, export and ZIP results. Notes end with
+  "Fine if intended."
+- Dialogue placeholders the game fills in, such as `%spouse`, `%farm`, `%kid1`
+  or `%time`, are checked. A missing, extra or renamed one is a note, never an
+  error. A percent sign such as `50%` is not a placeholder.
+- A changed bare `^` or `#` is a note instead of a token error, because in
+  letters `^` is a line break and in UI strings `#` is ordinary text. It stays
+  an error when it puts two different portraits on one page or detaches the
+  `#` before a `$y` quick response.
+- The editor's token chips show their severity (red circle for errors, yellow
+  triangle for notes), the issue box is compact, and the editor keeps a fixed
+  size while paging. An intentionally blank translation is named next to the
+  field and shows as "(left blank)" in the table. Translate with AI explains
+  why it does not apply to Done and Review strings. **Save edited suggestion**
+  is now **Save edit**, like Save edit & next, and with the longer Review and
+  update labels the Save shortcut moves to its tooltip so the editor tools stay
+  on one row.
+- The export result and the Activity log name translation files relative to
+  the Mods folder, such as `Mods/[CP] MrGinger/i18n/de.json`, instead of the
+  full path with your user folder. ZIPs and LLM batch files are named by their
+  file name.
+- Smaller layout and keyboard fixes: dialogs take focus reliably, opening
+  another mod resets the filters to All, Issues fits its columns when saved
+  widths no longer fit, the mod list hides an empty Nexus column, editor
+  shortcuts can no longer be bound to plain typing keys, and F5, Ctrl+R, F3
+  and Ctrl+P no longer reload, search or print inside the app.
 
 ### Fixed
 
-- Regional translation files such as `de-DE.json` or `es-ES.json` are read
-  together with `de.json` for every language, as already done for `pt-BR.json`
-  and `zh-CN.json`; the game prefers them over `de.json`. JSON exports back
-  them up and remove them, and the result and Activity log now name each
-  removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs never
-  include or remove them; when the original mod has one, the ZIP preview names
-  it so the translator can tell players, for example on the mod page, to
-  delete it after installing the ZIP.
-- A mod folder the game never loads is no longer offered for translation or
-  used as a glossary language pack. The game stops looking inside a folder
-  once it holds any file other than readmes, text files, common images (such
-  as `.png` or `.jpg`) or archives (such as `.zip`),
-  so a `manifest.json` below such a folder, for example `Pkg/[CP] X` next to
-  `Pkg/config.json` or `Mod/optional` inside another mod, is listed in the scan
-  as a mod folder SMAPI doesn't load as a mod. A folder link no longer hides the
-  real mod folder it points to.
-- The unreachable "Has target text" string filter is removed; a saved workspace
-  that still stores it opens with the All filter.
-- A glossary built in Settings shows its hints in the editor right away,
-  also when Settings is then closed without saving, instead of only after a
-  restart.
-- Commented-out entries such as `//"OldGreeting": "Hi",` and notes such as
-  `// TODO` in `default.json` no longer show up as section headings in the
-  editor or in the AI request.
-- The glossary keeps names with small words such as "Ring of Yoba" or
-  "Message in a Bottle", and keeps Vietnamese names, which write each
-  syllable as a separate word.
-- When a file or folder of a split `i18n/<lang>/` translation cannot be
-  opened during a scan or an export, the message names it (relative to the
-  Mods folder or as `i18n/<lang>`) and says what to do, instead of showing
-  only a system error.
-- F5, Ctrl+R, F3 and Ctrl+P no longer reload, search or print inside the app
-  window; Translate with AI keeps Ctrl+F5.
-- An export failure stays visible when another result replaced its card, the
-  editor closes with a note when a reload removes the string being edited,
-  and Open Review is offered only while strings wait in Review.
-- The error for a damaged settings file can be copied from its card and is
-  listed in the Activity log. Export refusals name files relative to the Mods
-  folder instead of the full path.
-
-- Local AI stops after three timeouts in a row with a plain hint to check LM
-  Studio or Ollama, instead of trying every remaining text.
-- Local AI gives long texts a large enough answer budget, so texts of about
-  4,000 characters are no longer cut off with "stopped before finishing" (a
-  slow model still has 120 seconds per text).
-- ChatGPT counts as ready only with a selected model, and preparing an AI run
-  no longer blocks the app while it reads the Mods folder.
-- The docs say which engine sends string keys (only ChatGPT does).
-- ChatGPT waits a moment before retrying a temporary failure and follows
-  OpenAI's suggested wait when it sends one.
-- An error that OpenAI sends in the middle of a response is reported in plain
-  words instead of as "HTTP 400"; an overloaded service counts as temporary.
-- A text too long for the quality check keeps its draft instead of dropping
-  the drafts of its whole batch; the warning names that reason.
-- A failed run that still saved suggestions keeps the warning about unchecked
-  drafts, and skipped terminology or token repairs show in the Activity log.
-- When ChatGPT cannot translate some texts even after retrying, the message
-  names up to three of their keys.
-- Signing in or out of ChatGPT is refused while an AI translation is running,
-  instead of silently cancelling it.
-- Sign-out deletes the saved session right away, no longer blocks other
-  ChatGPT actions while it contacts OpenAI, and revokes the access token too.
-
-- When a mod has both `pt.json` and `pt-BR.json` (or `zh.json` and
-  `zh-CN.json`), both are read like SMAPI does, with the regional value winning
-  per key. Keys only the language file had no longer look untranslated, and
-  the export no longer drops them.
-- The ZIP for one mod refuses to save into the game or Mods folder or through
-  a link, and notices an English file that changed while it was prepared, like
-  the ZIP for all mods.
-- Undo for a batch edit stays available after the editor took over existing
-  translations from a mod's files.
-- A missing `settings.json` with a valid `settings.json.bak` loads the backup
-  instead of starting setup again.
-- Saving rejects an unknown translation status instead of storing it and
-  later reading it as Done.
-
-- An empty translation no longer shows a warning. Clearing a string in the
-  app showed a warning triangle and raised the Issues count even though the
-  export leaves the string out and the game shows English.
-- The LLM batch import preflight no longer prints its raw source check state
-  ("notChecked"); a blocked import shows its reason first.
-- The ZIP dialog no longer repeats the mod name on every left-out string, and
-  the activity log no longer cuts its top line in half.
-
-- A single-string AI translation in the editor can be cancelled, and closing
-  the editor (or pressing Esc) during it cancels it instead of being blocked.
-- Settings and a re-run of setup ask before discarding unsaved changes.
-- Opening a folder, the logs, or a link now reports a failure instead of doing
-  nothing.
-- Short info toasts such as "Copied" no longer hide the latest result, and
-  clearing a selection no longer shows a toast that could contradict a new
-  selection.
-- An `i18n` folder deeper inside a mod without its own `manifest.json` is no
-  longer offered for translation, because SMAPI never loads it; Scan lists it
-  as information. Mods whose components each have a manifest, such as
-  Stardew Valley Expanded, are unaffected.
-- A second portrait on the male or female part of a dialogue page split by
-  `^` is a token error, and different portraits for the two parts are no
-  longer flagged.
-- A second portrait that only the other player gender sees, inside a he/she
-  switch, is now a token error like any other second portrait on a page.
-- `$neutral` is no longer treated as a portrait. The game does not read it
-  from dialogue text and shows it as written, so adding it is an error.
-- Saved translations, settings, the glossary, and exported translation files
-  are flushed to disk before they replace the previous file, so a power loss
-  right after a save cannot leave an empty file behind.
-- A ChatGPT connection that stalls early is reported as an interrupted
-  connection and retried, instead of as a batch that exceeded the five-minute
-  limit and was split.
-- If a package breaks between the preview and the build of the ZIP for all
-  mods, the result and the Activity log name it as left out instead of leaving
-  it out without a word.
-- A he/she switch inside another one is a token error. The game closes a
-  switch at the first `}$`, so the nested version showed broken text while the
-  app accepted it.
-- The same portrait twice on one dialogue page, such as `$h` at the start and
-  end, is no longer an error. The game removes every copy of the portrait it
-  shows; only a second, different portrait stays visible as raw text.
-- An `i18n` folder without a `manifest.json` above it appears in the scan
-  result as information instead of disappearing silently; SMAPI does not load
-  it either.
-- When several strings fail in Local AI for the same reason, such as an
-  unreachable server, the message names that reason once and lists the
-  affected strings after it.
-- An LLM batch is written only to a `.json` file picked in the Save dialog,
-  never into the app's data folder or the game and Mods folders, and through a
-  temporary file so a failed write leaves no half-written batch.
-- The `_` separators of a `$y 'question_answer_reply'` quick response are
-  protected. A dropped or added separator used to pass silently and mixed up
-  which reply belongs to which answer in the game, or stopped the dialogue
-  with an error. A single `*` in a reply, which the game turns into a new
-  dialogue box, is protected as well. A quick response on a later dialogue
-  page can now be translated instead of counting as one changed token.
-- A translation file saved as UTF-16 (with a byte order mark) is read like
-  SMAPI reads it, and a target value that is a number, `null`, or a list no
-  longer hides the whole component: numbers become text and other values
-  count as untranslated.
-- One unreadable document in a split `i18n/<lang>/` folder no longer skips
-  every source document of the component. It blocks only the document of the
-  same name; any other is reported once as a scan warning.
-- The string selection, scroll position, and visible rows stay in place when
-  the same strings reload after an AI run, rescan, import, or undo. Selected
-  strings that no longer exist drop out. An AI run reloads the table once
-  instead of twice.
-- Closing the string editor returns keyboard focus to the table, on the
-  edited row or the row that took its place when it left the filter.
-- Exporting a mod again without changes leaves target files that already hold
-  the exported content untouched, so their earlier `.bak` backup and file
-  date are kept. A failed export no longer reports an incomplete rollback for
-  files whose content never changed.
-- Importing a batch no longer replaces a saved single-space translation, which
-  deliberately hides visible text.
-- **Export ZIP for all mods** no longer fails completely when the scan had to
-  skip a component, such as another mod with a broken `default.json`. A
-  package with a skipped part is left out as a whole and named in the preview;
-  every other translation is packaged.
-- A dialogue page that starts with a he/she switch or a portrait, such as
-  `#${He^She}$ is here.` or `#$hSo happy!`, is translatable again; it was
-  treated as one protected token, so every translation was an error.
-- A ChatGPT refusal for one string no longer ends the whole run. The batch is
-  split until the refused string is isolated; every other string is still
-  translated, and in the quality review drafts are kept.
-- A ChatGPT batch that reaches the five-minute limit is split into smaller
-  batches right away instead of being retried at the same size and reported
-  as a network error. A failed connection is still reported as a network
-  problem.
-- Existing Chinese translations in `i18n/zh-CN.json` are imported like
-  `pt-BR.json`; export writes `zh.json` and backs up and removes the regional
-  file, so the exported translation is the one SMAPI loads.
-- A split-locale target document with the same name as its source, such as an
-  empty `i18n/de/Events.json` stub, no longer skips the component; only keys
-  that belong to another source document block it.
-- Community language-pack `Strings` files with comments or trailing commas are
-  read for the glossary instead of being ignored.
-- The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
-- Folders whose name starts with a dot (for example `.disabled`) are skipped
-  like SMAPI does, so a parked copy of a mod no longer counts as a duplicate
-  UniqueID that blocks the live mod, the source-change comparison, and the
-  all-mods ZIP.
-- Scan reports no longer show `\\?\` in front of relative file paths.
-- The automatic rescan after an AI run keeps the "new or changed strings"
-  scan filter.
-- `.ZIP` in any letter case is accepted as the translation ZIP destination.
-- Language folders such as `i18n/de-DE/` are read together with `i18n/de/`
-  per document, like the game does. JSON export moves their texts into
-  `i18n/de/`, backs up and removes the regional documents and names them; the
-  ZIP preview points them out like regional files.
-- A mod whose `i18n` folder has both top-level files and language folders is
-  no longer skipped. Like the game, the app uses the top-level files, and the
-  scan notes that the language folders are not used.
-- A broken `de.json` or `de-DE.json` next to a readable one is skipped like
-  the game does and named in the scan, whichever of the two it is. JSON export
-  no longer stops on it and keeps a backup when replacing or removing it.
-- The editor explains several token problems of one string in the same order
-  as the export result.
-- Cancel right after starting an AI translation of one string now stops it;
-  before, the run could still finish.
-- When ChatGPT refuses some texts, the batch is split right away instead of
-  being sent again unchanged. A quality check that took too long or was
-  refused now says so instead of reporting an invalid review response.
-- A Local AI server that is not running stops the run after the first attempt
-  with the "Could not reach Local AI" message, also when the connection times
-  out, instead of being treated as a slow model.
+- Regional translation files that a mod ships for your language, such as
+  `pt-BR.json` or `de-DE.json`, are now handled for every language. The game
+  uses them instead of `pt.json` or `de.json` for each text they contain, so
+  the app reads them as existing translations, and a JSON export backs them up
+  and removes them so players see your translation. The export result names
+  each removed file. A translation ZIP never contains or removes them; if the
+  original mod has one, the ZIP preview says so, so you can tell players to
+  delete it after installing. Regional language folders such as `i18n/de-DE/`
+  are handled the same way.
+- A mod whose `i18n` folder has both top-level files and language folders, or
+  a broken `de.json` next to a readable `de-DE.json` (or the other way round),
+  is read like the game does instead of being skipped; the scan names what it
+  ignores.
+- The scan offers only mod folders SMAPI actually loads. A `manifest.json`
+  below a folder that already holds other files, or inside another mod, is
+  listed as a mod folder SMAPI doesn't load as a mod, and an `i18n` folder
+  without its own `manifest.json` is listed as information. Folders starting
+  with a dot (such as `.disabled`) are skipped and `Manifest.json` is found in
+  any letter case, like SMAPI. A Mod Organizer 2 `mods` folder still works as
+  the Mods folder: MO2's `meta.ini` and `.mohidden` files, which the game
+  never sees, do not count.
+- One mod the scan has to skip no longer turns off the comparison of new and
+  changed English strings for every other mod. A UTF-16 translation file, a
+  target value that is a number, `null` or a list, an empty split-locale stub
+  or one unreadable document in a split `i18n/<lang>/` folder no longer hides
+  the whole component.
+- Fewer false token errors: `{{ name }}` and `{{Name}}` count as the same
+  placeholder, extra spaces between dialogue command arguments are ignored
+  like in the game, dropping `[ArticleFor …]` is only a note, removing every
+  he/she switch no longer reports its repeated tokens as missing, a page that
+  starts with a switch or portrait is translatable, and the same portrait twice
+  on one page is fine. The full-width character hint appears only when a
+  missing or changed token uses such characters.
+- Token problems the game really trips over are now caught: changed question
+  ids or one-time flags at the start of a string, the `_` separators and `*`
+  in `$y` quick responses, a he/she switch inside another one, a second
+  portrait in a gender branch, and `$neutral`, which the game shows as text.
 - A dialogue command typed in the wrong letter case, such as `#$B#` instead of
-  `#$b#`, is now explained as one problem: the game does not know it and
-  shows it as text, followed by "Did you mean #$b#?" when `#$b#` is missing.
-  Before, the editor and
-  the export named it as an extra command the dialogue needs and the correct
-  one as missing.
-- The export result and the Activity log name written translation files
-  relative to the Mods folder, such as `Mods/[CP] MrGinger/i18n/de.json`,
-  instead of the full path with your user folder. ZIPs and LLM batch files
-  saved or imported from elsewhere are named by their file name only. **Open folder** and
-  **Show file** still open the right place.
+  `#$b#`, is explained as one problem the game shows as text, followed by
+  "Did you mean #$b#?" when `#$b#` is missing.
+- Exporting a mod again without changes leaves its files untouched, so their
+  earlier `.bak` backup is kept. The ZIP for all mods no longer fails because
+  of one skipped component; that package is left out and named. The ZIP for
+  one mod refuses the game or Mods folder as destination. Saved work, settings,
+  the glossary and exported files are flushed to disk before they replace the
+  previous file.
+- An LLM batch is written only to the `.json` file picked in the Save dialog,
+  and importing a batch keeps a saved single-space translation.
+- Local AI: a server that is not running stops the run after the first
+  attempt with "Could not reach Local AI", three timeouts in a row stop the
+  run, texts of about 4,000 characters are no longer cut off, and strings that
+  fail for the same reason are listed under that reason once.
+- ChatGPT: a refused text or a batch that reaches the five-minute limit is
+  split right away instead of ending or repeating the run, temporary failures
+  wait before retrying, errors sent mid-response are explained in plain words,
+  a quality check that took too long or was refused says so and keeps the
+  drafts, and texts that still failed are named by key. Signing in or out is
+  refused during a run, sign-out revokes the refresh and access tokens, and
+  ChatGPT counts as ready only with a selected model.
+- A single-string AI translation can be cancelled, also right after starting,
+  and closing the editor cancels it.
+- The table keeps selection, scroll position and visible rows when the same
+  strings reload after an AI run, rescan, import or undo, and closing the
+  editor returns focus to the edited row.
+- An empty translation no longer shows a warning, a glossary built in Settings
+  shows its hints right away, commented-out entries in `default.json` are no
+  longer section headings, and glossary names such as "Ring of Yoba" and
+  Vietnamese names are kept.
+- Settings and a re-run of setup ask before discarding unsaved changes, a
+  missing `settings.json` with a valid backup loads the backup, a damaged
+  settings file shows one card whose error can be copied, and failures to open
+  a folder, the logs or a link are reported. The unreachable "Has target text"
+  filter is removed.
 
 ## [2.4.0] - 2026-10-11
 
@@ -923,7 +717,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...v2.2.0

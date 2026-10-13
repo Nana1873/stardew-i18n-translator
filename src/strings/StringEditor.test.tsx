@@ -211,7 +211,7 @@ describe("StringEditor", () => {
       target: { value: "Hallo!" },
     });
     expect(
-      screen.getByRole("button", { name: /Save edited suggestion/ }),
+      screen.getByRole("button", { name: /^Save edit$/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Save edit & next/ }),
