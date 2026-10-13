@@ -186,7 +186,11 @@ export function LeftOutStrings<T extends LeftOutString>({
                 <button
                   className="desktop-xd-link"
                   type="button"
-                  aria-label={`Open ${problem.key}`}
+                  aria-label={
+                    showModNames
+                      ? `Open ${problem.key} in ${problem.modName}`
+                      : `Open ${problem.key}`
+                  }
                   onClick={() => onInspect(problem)}
                   disabled={disabled}
                 >

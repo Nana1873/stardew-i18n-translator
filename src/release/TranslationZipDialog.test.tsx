@@ -36,7 +36,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={{ ...PREVIEW, versionConflicts: [] }}
-        componentCount={1}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -60,7 +59,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -87,7 +85,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -118,7 +115,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={{ ...PREVIEW, versionConflicts: [] }}
-        componentCount={1}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -156,7 +152,6 @@ describe("TranslationZipDialog", () => {
             },
           ],
         }}
-        componentCount={1}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -200,7 +195,6 @@ describe("TranslationZipDialog", () => {
           ],
         }}
         combined
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -237,7 +231,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={{ ...PREVIEW, versionConflicts: [], problems: [problem] }}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={inspect}
@@ -256,7 +249,6 @@ describe("TranslationZipDialog", () => {
     const { container } = render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building={false}
         onInspect={vi.fn()}
@@ -283,7 +275,6 @@ describe("TranslationZipDialog", () => {
     render(
       <TranslationZipDialog
         preview={PREVIEW}
-        componentCount={2}
         error={null}
         building
         onInspect={vi.fn()}

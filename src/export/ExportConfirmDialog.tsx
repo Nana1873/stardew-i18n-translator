@@ -34,6 +34,9 @@ interface ExportConfirmDialogProps {
   lastExportLabel?: string | null;
   /** The Export… choice shown above the preview. */
   chooser?: ReactNode;
+  /** True while another Export… choice loads: this preview is stale and
+   * its actions wait. */
+  switching?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -57,6 +60,7 @@ export function ExportConfirmDialog({
   onInspectProblem,
   lastExportLabel = null,
   chooser,
+  switching = false,
   onConfirm,
   onCancel,
 }: ExportConfirmDialogProps) {
@@ -87,6 +91,7 @@ export function ExportConfirmDialog({
       onInspectProblem={onInspectProblem}
       lastExportLabel={lastExportLabel}
       chooser={chooser}
+      switching={switching}
       onConfirm={onConfirm}
       onCancel={onCancel}
       dialogRef={dialogRef}

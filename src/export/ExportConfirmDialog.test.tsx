@@ -180,6 +180,55 @@ describe("JSON export confirmation", () => {
     expect(counts).not.toHaveTextContent("not translated yet");
     expect(screen.getByText("left out").parentElement).toHaveClass("is-danger");
   });
+  it("names the mod of a left-out string when several mods are exported", () => {
+    show({
+      mods: 2,
+      omitted: [
+        {
+          modUniqueId: "a",
+          modName: "Alpha",
+          relativeDir: "i18n",
+          key: "same.key",
+          reason: "# is missing from the translation.",
+        },
+        {
+          modUniqueId: "b",
+          modName: "Beta",
+          relativeDir: "i18n",
+          key: "same.key",
+          reason: "# is missing from the translation.",
+        },
+      ],
+      onInspectProblem: vi.fn(),
+    });
+    expect(
+      screen.getByRole("button", { name: "Open same.key in Alpha" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Open same.key in Beta" }),
+    ).toBeEnabled();
+  });
+  it("holds every action while another choice loads", () => {
+    const props = show({
+      switching: true,
+      omitted: [
+        {
+          modUniqueId: "test.mod",
+          modName: "Test Mod",
+          relativeDir: "i18n",
+          key: "status.saved",
+          reason: "# is missing from the translation.",
+        },
+      ],
+      onInspectProblem: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Open status.saved" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(props.onCancel).toHaveBeenCalledOnce();
+  });
   it("treats Escape as cancellation and leaves backdrop clicks inert", () => {
     const props = show();
     fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);

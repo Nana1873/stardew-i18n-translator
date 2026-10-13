@@ -33,6 +33,7 @@ export function ExportConfirmBody({
   onInspectProblem,
   lastExportLabel,
   chooser,
+  switching = false,
   onConfirm,
   onCancel,
   dialogRef,
@@ -147,7 +148,7 @@ export function ExportConfirmBody({
           </div>
         </div>
 
-        <div className="desktop-xd-body">
+        <div className="desktop-xd-body" aria-busy={switching || undefined}>
           <ExportCounts
             label="Export contents"
             included={willWrite}
@@ -162,6 +163,7 @@ export function ExportConfirmBody({
             target="export"
             showModNames={(mods ?? 1) > 1}
             onInspect={onInspectProblem}
+            disabled={switching}
           />
 
           <div className="desktop-xd-sections">
@@ -243,10 +245,13 @@ export function ExportConfirmBody({
             className="translator-button translator-button-primary"
             type="button"
             onClick={onConfirm}
+            disabled={switching}
           >
-            {existingFiles > 0
-              ? "Replace in Mods folder"
-              : "Export to Mods folder"}
+            {switching
+              ? "Checking…"
+              : existingFiles > 0
+                ? "Replace in Mods folder"
+                : "Export to Mods folder"}
           </button>
         </div>
       </section>

@@ -27,7 +27,6 @@ function safeFileName(value: string): string {
 export function TranslationZipDialog({
   preview,
   combined = false,
-  componentCount,
   untranslated = null,
   modFolders = [],
   modsPath,
@@ -37,12 +36,12 @@ export function TranslationZipDialog({
   onBuild,
   onClose,
   chooser,
+  switching = false,
   subject,
   targetLanguage,
 }: {
   preview: ZipPreview | null;
   combined?: boolean;
-  componentCount: number | null;
   /** Strings with no translation yet, counted like the JSON export. */
   untranslated?: number | null;
   modFolders?: ReadonlyArray<{ uniqueId: string; folderPath: string }>;
@@ -54,12 +53,14 @@ export function TranslationZipDialog({
   onClose: () => void;
   /** The Export… choice shown above the preview. */
   chooser?: ReactNode;
+  /** True while another Export… choice loads: this preview is stale and
+   * its actions wait. */
+  switching?: boolean;
   /** Subtitle before the preview is ready. */
   subject?: string;
   /** "German (de)"; shown before the preview is ready. */
   targetLanguage?: string;
 }) {
-  void componentCount;
   const [version, setVersion] = useState(preview?.selectedVersion ?? "");
   const [versionConfirmed, setVersionConfirmed] = useState(false);
   const [folderEdits, setFolderEdits] = useState<Map<string, string>>(
@@ -115,6 +116,8 @@ export function TranslationZipDialog({
   const hasVersionConflicts =
     !combined && Boolean(preview?.versionConflicts.length);
   const versionReady = !hasVersionConflicts || versionConfirmed;
+  // Building, or a stale preview while another Export… choice loads.
+  const locked = building || switching;
 
   const zipName = combined
     ? preview
@@ -159,7 +162,7 @@ export function TranslationZipDialog({
         />
         {chooser}
 
-        <div className="desktop-xd-body">
+        <div className="desktop-xd-body" aria-busy={switching || undefined}>
           {error && (
             <div className="desktop-xd-alert is-error" role="alert">
               <strong>Could not prepare ZIP:</strong> {error}
@@ -180,7 +183,7 @@ export function TranslationZipDialog({
                 target="ZIP"
                 showModNames={combined}
                 onInspect={onInspect}
-                disabled={building}
+                disabled={locked}
               />
 
               {hasVersionConflicts && (
@@ -188,7 +191,7 @@ export function TranslationZipDialog({
                   <input
                     type="checkbox"
                     checked={versionConfirmed}
-                    disabled={building}
+                    disabled={locked}
                     onChange={(event) =>
                       setVersionConfirmed(event.target.checked)
                     }
@@ -235,7 +238,7 @@ export function TranslationZipDialog({
                         <span>Version</span>
                         <input
                           value={version}
-                          disabled={building}
+                          disabled={locked}
                           onChange={(event) => {
                             setVersion(event.target.value);
                             setVersionConfirmed(false);
@@ -267,7 +270,7 @@ export function TranslationZipDialog({
                               folderEdits.get(entry.modUniqueId) ??
                               entry.installFolder
                             }
-                            disabled={building}
+                            disabled={locked}
                             onChange={(event) =>
                               setFolderEdits((current) =>
                                 new Map(current).set(
@@ -359,7 +362,7 @@ export function TranslationZipDialog({
               !preview ||
               blocked ||
               empty ||
-              building ||
+              locked ||
               (!combined && !version.trim()) ||
               !versionReady
             }
@@ -376,7 +379,7 @@ export function TranslationZipDialog({
               )
             }
           >
-            {building ? "Exporting…" : "Save ZIP…"}
+            {building ? "Exporting…" : switching ? "Checking…" : "Save ZIP…"}
           </button>
         </div>
       </section>

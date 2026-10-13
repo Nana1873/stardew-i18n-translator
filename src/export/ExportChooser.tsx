@@ -51,7 +51,7 @@ export function useStickyExportHeight(
     const observer = new ResizeObserver(apply);
     observer.observe(dialog);
     return () => observer.disconnect();
-  });
+  }, [dialogRef, enabled]);
 }
 
 function ChoiceRadios<T extends string>({
@@ -118,6 +118,7 @@ function ChoiceRadios<T extends string>({
                 checked && focusGroup === group ? "true" : undefined
               }
               aria-checked={checked}
+              aria-disabled={busy || undefined}
               tabIndex={checked ? 0 : -1}
               disabled={option.disabled}
               onClick={() => select(option.value)}

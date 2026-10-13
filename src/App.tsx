@@ -1597,10 +1597,22 @@ export function App() {
       notify(`Export failed: ${error}`, "error");
   }
 
+  /** Drops a running export preflight: its result opens nothing, and its
+   * end no longer clears the busy state of whatever runs instead. */
+  function cancelExportPreflight() {
+    if (exportPreflightRef.current.activeRequestId === null) return;
+    exportPreflightRef.current.activeRequestId = null;
+    setCheckingExportReadiness(false);
+    setExporting(false);
+  }
+
   function beginExport(
     title: string,
     retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
   ) {
+    // A preflight still running for another choice must not open a second
+    // confirmation or end this write's busy state.
+    exportPreflightRef.current.activeRequestId = null;
     setCheckingExportReadiness(false);
     setExporting(true);
     presentResult({
@@ -2204,6 +2216,9 @@ export function App() {
     zipContext,
     checkingExportReadiness,
   ]);
+  // After a switch to JSON, the previous preview stays visible until the
+  // preflight is ready; none of its actions may run meanwhile.
+  const exportSwitching = Boolean(exportChoice) && checkingExportReadiness;
   const exportChooser = exportChoice ? (
     <ExportChooser
       choice={exportChoice}
@@ -2745,8 +2760,14 @@ export function App() {
                 : null
             }
             chooser={exportChooser}
-            onCancel={() => setExportConfirm(null)}
+            switching={exportSwitching}
+            onCancel={() => {
+              cancelExportPreflight();
+              setExportConfirm(null);
+            }}
             onConfirm={() => {
+              // The visible preview is stale while another choice loads.
+              if (exportSwitching) return;
               const kind = exportConfirm.kind;
               const modUniqueId = exportConfirm.modUniqueId;
               setExportConfirm(null);
@@ -2768,7 +2789,6 @@ export function App() {
             combined={zipContext?.combined}
             targetLanguage={languageLine}
             subject={zipContext?.combined ? "All mods" : selectedMod?.name}
-            componentCount={zipContext?.components.length ?? null}
             untranslated={
               scan
                 ? scan.mods
@@ -2791,10 +2811,16 @@ export function App() {
             building={zipBuilding}
             onInspect={inspectZipProblem}
             chooser={exportChooser}
-            onBuild={(fileName, installFolders) =>
-              void chooseZipDestination(fileName, installFolders)
-            }
-            onClose={closeZipDialog}
+            switching={exportSwitching}
+            onBuild={(fileName, installFolders) => {
+              // The visible preview is stale while another choice loads.
+              if (exportSwitching) return;
+              void chooseZipDestination(fileName, installFolders);
+            }}
+            onClose={() => {
+              cancelExportPreflight();
+              closeZipDialog();
+            }}
           />
         )}
         {dropPaths && (

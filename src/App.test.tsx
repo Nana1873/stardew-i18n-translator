@@ -1179,6 +1179,138 @@ describe("App shell", () => {
     ).toHaveLength(2);
   });
 
+  describe("while an Export… switch is loading", () => {
+    const zipPreview: ZipPreview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod - 1.0 - German (de).zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Test Mod",
+          modVersion: "1.0",
+          modUniqueId: "a.b",
+          installFolder: "Test Mod",
+          archivePath: "Test Mod/i18n/de.json",
+          strings: 1,
+          totalSourceStrings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 1,
+      totalSourceStrings: 1,
+    };
+    /** The first JSON preflight answers at once; later ones wait. */
+    function mockSwitching() {
+      const pending = deferred<ExportPreflight>();
+      let preflights = 0;
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+        if (cmd === "load_glossary") return Promise.resolve(null);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(true));
+        if (cmd === "load_strings") return Promise.resolve([]);
+        if (cmd === "preview_translation_zip")
+          return Promise.resolve(zipPreview);
+        if (cmd === "preview_export")
+          return ++preflights === 1
+            ? Promise.resolve({ acceptedMismatches: 0, omitted: [] })
+            : pending.promise;
+        if (cmd === "export_mod" || cmd === "export_all_mods")
+          return new Promise(() => {});
+        return Promise.resolve(null);
+      });
+      return pending;
+    }
+    const calls = (cmd: string) =>
+      invokeMock.mock.calls.filter(([name]) => name === cmd).length;
+
+    it("does not confirm the stale preview of the previous choice", async () => {
+      const pending = mockSwitching();
+      render(<App />);
+      expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+      await chooseToolbarAction("File actions", "Export current mod");
+      fireEvent.click(screen.getByRole("radio", { name: "All mods" }));
+
+      const stale = screen.getByRole("dialog", { name: "Export translations" });
+      const confirm = within(stale).getByRole("button", { name: "Checking…" });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      expect(calls("export_mod")).toBe(0);
+      expect(screen.getByRole("radio", { name: "All mods" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+
+      act(() => pending.resolve({ acceptedMismatches: 0, omitted: [] }));
+      const ready = await within(
+        screen.getByRole("dialog", { name: "Export translations" }),
+      ).findByRole("button", { name: "Replace in Mods folder" });
+      expect(screen.getByRole("dialog")).toHaveTextContent("1 mod · German");
+      fireEvent.click(ready);
+      await waitFor(() => expect(calls("export_all_mods")).toBe(1));
+      expect(calls("export_mod")).toBe(0);
+      // The write keeps the menu busy until it finishes.
+      expect(
+        screen.getByRole("button", { name: "File actions" }),
+      ).toBeDisabled();
+    });
+
+    it("cancels the pending preview on Escape so nothing reopens", async () => {
+      const pending = mockSwitching();
+      render(<App />);
+      expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+      await chooseToolbarAction("File actions", "Export current mod");
+      fireEvent.click(screen.getByRole("radio", { name: "All mods" }));
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      await act(async () => {
+        pending.resolve({ acceptedMismatches: 0, omitted: [] });
+        await pending.promise;
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "File actions" }),
+      ).toBeEnabled();
+    });
+
+    it("does not save the ZIP while switching to JSON, and Cancel stops the switch", async () => {
+      const pending = mockSwitching();
+      render(<App />);
+      expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+      // Use up the immediate preflight so the next one waits.
+      await chooseToolbarAction("File actions", "Export current mod");
+      fireEvent.click(screen.getByRole("radio", { name: "ZIP" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeEnabled(),
+      );
+
+      fireEvent.click(screen.getByRole("radio", { name: "JSON" }));
+      const checking = screen.getByRole("button", { name: "Checking…" });
+      expect(checking).toBeDisabled();
+      fireEvent.click(checking);
+      expect(calls("pick_translation_zip_destination")).toBe(0);
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => {
+        pending.resolve({ acceptedMismatches: 0, omitted: [] });
+        await pending.promise;
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "File actions" }),
+      ).toBeEnabled();
+    });
+  });
+
   it("keeps toolbar dialogs disabled while export preflight is pending", async () => {
     const preflight = deferred<ExportPreflight>();
     invokeMock.mockImplementation((cmd: string) => {
