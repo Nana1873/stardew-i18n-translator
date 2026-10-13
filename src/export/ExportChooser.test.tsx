@@ -1,6 +1,51 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
-import { ExportChooser, type ExportChoice } from "./ExportChooser";
+import {
+  ExportChooser,
+  openingExportChoice,
+  rememberedExportChoice,
+  type ExportChoice,
+} from "./ExportChooser";
+
+describe("Remembered export choice", () => {
+  it("keeps the user's scope when All mods was only the fallback", () => {
+    // Opened without a selected mod: the dialog shows All mods, but the
+    // remembered scope stays the user's real choice.
+    const remembered: ExportChoice = { scope: "mod", output: "json" };
+    const shown = openingExportChoice(remembered, false);
+    expect(shown).toEqual({ scope: "all", output: "json" });
+    const afterFallback = rememberedExportChoice(remembered, shown, false);
+    expect(afterFallback).toEqual({ scope: "mod", output: "json" });
+
+    // Changing the output without a mod is still remembered.
+    const zip = rememberedExportChoice(
+      afterFallback,
+      { scope: "all", output: "zip" },
+      false,
+    );
+    expect(zip).toEqual({ scope: "mod", output: "zip" });
+    expect(openingExportChoice(zip, true)).toEqual({
+      scope: "mod",
+      output: "zip",
+    });
+  });
+
+  it("starts on This mod and ZIP and remembers a real All mods choice", () => {
+    expect(openingExportChoice(null, true)).toEqual({
+      scope: "mod",
+      output: "zip",
+    });
+    const all = rememberedExportChoice(
+      null,
+      { scope: "all", output: "json" },
+      true,
+    );
+    expect(openingExportChoice(all, true)).toEqual({
+      scope: "all",
+      output: "json",
+    });
+  });
+});
 
 function show(
   choice: ExportChoice,

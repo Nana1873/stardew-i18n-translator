@@ -40,6 +40,28 @@ pub(crate) fn describe_transport_error(url: &str, error: &reqwest::Error) -> Str
     }
 }
 
+/// The message for a chat request that could not be sent. A failed connection
+/// comes first: a server that is not running can also fail with a connect
+/// timeout, and it must read as unreachable (which stops the run at once),
+/// not as a slow model that is tried again.
+pub(crate) fn chat_send_failure(
+    url: &str,
+    connect: bool,
+    timeout: bool,
+    describe: impl FnOnce() -> String,
+) -> String {
+    if connect {
+        connection_failure_message(url)
+    } else if timeout {
+        format!(
+            "The model timed out — it may be too slow or stuck. Try a smaller/faster \
+             instruct model, or a shorter string. ({url})"
+        )
+    } else {
+        describe()
+    }
+}
+
 #[cfg(test)]
 #[path = "llm/repair_tests.rs"]
 mod repair_tests;
@@ -556,14 +578,9 @@ async fn chat(
         .send()
         .await
         .map_err(|error| {
-            if error.is_timeout() {
-                format!(
-                    "The model timed out — it may be too slow or stuck. Try a smaller/faster \
-                     instruct model, or a shorter string. ({url})"
-                )
-            } else {
+            chat_send_failure(url.as_str(), error.is_connect(), error.is_timeout(), || {
                 describe_transport_error(url.as_str(), &error)
-            }
+            })
         })?;
 
     if !response.status().is_success() {

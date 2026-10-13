@@ -102,13 +102,26 @@ impl RemovedRegionalFile {
         format!(
             "Also removed {}{backup}, because the game would prefer it over {}.",
             self.shown_path,
-            file_name_of(target_path)
+            target_name_of(target_path)
         )
     }
 }
 
 fn file_name_of(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// `de.json` for a flat target, `de/Dialogue.json` for a document in a
+/// language folder, so the name says which file the game reads.
+fn target_name_of(path: &str) -> String {
+    let mut parts = path.rsplit(['/', '\\']);
+    let name = parts.next().unwrap_or(path);
+    match parts.next() {
+        Some(folder) if !folder.is_empty() && !folder.eq_ignore_ascii_case("i18n") => {
+            format!("{folder}/{name}")
+        }
+        _ => name.to_string(),
+    }
 }
 
 /// Name removed regional files relative to the Mods folder, so messages do not
@@ -656,8 +669,9 @@ fn prepare_mod(
     let mut prepared = Vec::new();
     for (file, rows) in prepared_rows {
         let default_path = Path::new(&file.default_path);
+        // A broken file of a canonical/regional pair was skipped when reading,
+        // like SMAPI does; replacing or removing it keeps a `.bak` backup.
         let target_path = Path::new(&file.target_path);
-        validate_locale_variants(target_path)?;
 
         let mut out: Map<String, Value> = Map::new();
         let mut file_result = ExportFileResult {
@@ -900,18 +914,6 @@ fn target_variants(target_path: &Path) -> Vec<PathBuf> {
     let mut variants = vec![target_path.to_path_buf()];
     variants.extend(scanner::regional_target_variant(target_path));
     variants
-}
-
-fn validate_locale_variants(target_path: &Path) -> Result<(), String> {
-    if scanner::regional_target_variant(target_path).is_some() {
-        for path in target_variants(target_path)
-            .into_iter()
-            .filter(|path| path.is_file())
-        {
-            scanner::read_target_file(&path)?;
-        }
-    }
-    Ok(())
 }
 
 fn export_io_error(error: &str, current: &Path, rollback_error: Option<&str>) -> String {
@@ -2632,6 +2634,79 @@ mod tests {
             .removed_regional_files
             .is_empty());
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn split_export_merges_and_removes_the_regional_language_folder_documents() {
+        let root = crate::test_support::temp_dir("export-split-regional");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default/Dialogue.json"),
+            r#"{"hello":"Hello","bye":"Bye"}"#,
+        );
+        write(&i18n.join("default/Events.json"), r#"{"start":"Start"}"#);
+        write(
+            &i18n.join("de/Dialogue.json"),
+            r#"{"hello":"Hallo alt","bye":"Tschüss"}"#,
+        );
+        write(
+            &i18n.join("de-DE/Dialogue.json"),
+            r#"{"hello":"Hallo neu"}"#,
+        );
+        write(&i18n.join("de-DE/Events.json"), r#"{"start":"Los"}"#);
+        let files = ["Dialogue.json", "Events.json"]
+            .map(|name| ExportFileInput {
+                relative_dir: format!("i18n/@split/{name}"),
+                default_path: i18n.join("default").join(name).display().to_string(),
+                target_path: i18n.join("de").join(name).display().to_string(),
+            })
+            .to_vec();
+
+        let mut result = export_mod(&root, "mod.id", &files).unwrap();
+        let dialogue = read(&i18n.join("de/Dialogue.json"));
+        assert!(dialogue.contains("Hallo neu") && dialogue.contains("Tschüss"));
+        assert!(read(&i18n.join("de/Events.json")).contains("Los"));
+        assert!(!i18n.join("de-DE/Dialogue.json").exists());
+        assert!(!i18n.join("de-DE/Events.json").exists());
+        assert!(read(&i18n.join("de-DE/Dialogue.json.bak")).contains("Hallo neu"));
+        assert!(read(&i18n.join("de-DE/Events.json.bak")).contains("Los"));
+
+        show_removed_regional_files(&mut result.files, &root);
+        let removed = &result.files[0].removed_regional_files;
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].shown_path, "Mods/i18n/de-DE/Dialogue.json");
+        assert_eq!(
+            removed[0].sentence(&result.files[0].target_path),
+            "Also removed Mods/i18n/de-DE/Dialogue.json (backed up as Dialogue.json.bak), \
+             because the game would prefer it over de/Dialogue.json."
+        );
+        assert_eq!(result.files[1].removed_regional_files.len(), 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_broken_file_of_a_regional_pair_does_not_stop_the_export() {
+        for (broken, valid) in [("de-DE.json", "de.json"), ("de.json", "de-DE.json")] {
+            let root = crate::test_support::temp_dir("export-broken-regional-pair");
+            let i18n = root.join("i18n");
+            write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+            write(&i18n.join(valid), r#"{"k":"Hallo"}"#);
+            write(&i18n.join(broken), "{ broken");
+            let files = vec![ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join("de.json").display().to_string(),
+            }];
+
+            let result = export_mod(&root, "mod.id", &files).unwrap();
+            assert!(read(&i18n.join("de.json")).contains("Hallo"));
+            assert!(!i18n.join("de-DE.json").exists());
+            // Nothing is lost: the broken file and the replaced one keep a backup.
+            assert_eq!(read(&i18n.join(format!("{broken}.bak"))), "{ broken");
+            assert!(read(&i18n.join(format!("{valid}.bak"))).contains("Hallo"));
+            assert_eq!(result.files[0].removed_regional_files.len(), 1);
+            std::fs::remove_dir_all(root).ok();
+        }
     }
 
     /// Windows refuses to delete a file opened without delete sharing, so the

@@ -31,7 +31,36 @@ const MAX_PROVIDER_TEXT_BYTES: usize = 256 * 1024;
 
 #[derive(Default)]
 pub struct AiRuntimeState {
-    active_run: Mutex<Option<ActiveRun>>,
+    active_run: Mutex<RunRegistry>,
+}
+
+/// How many early cancellations and closed run ids are remembered. Run ids
+/// are unique per frontend request, so a few recent ones are enough.
+const REMEMBERED_RUN_IDS: usize = 16;
+
+#[derive(Default)]
+struct RunRegistry {
+    active: Option<ActiveRun>,
+    /// Cancellations that arrived before their run began: the frontend may
+    /// send Cancel while the start request is still on its way.
+    early_cancels: std::collections::VecDeque<String>,
+    /// Recently finished runs. A late Cancel for one of them is not
+    /// acknowledged, so it never contradicts a completed result.
+    closed: std::collections::VecDeque<String>,
+}
+
+impl RunRegistry {
+    fn remember(list: &mut std::collections::VecDeque<String>, run_id: &str) {
+        if list.len() >= REMEMBERED_RUN_IDS {
+            list.pop_front();
+        }
+        list.push_back(run_id.to_string());
+    }
+
+    fn close(&mut self, run_id: &str) {
+        self.active = None;
+        Self::remember(&mut self.closed, run_id);
+    }
 }
 
 struct ActiveRun {
@@ -48,14 +77,19 @@ pub(crate) struct RunLease<'a> {
 
 impl AiRuntimeState {
     pub(crate) fn begin_run(&self, run_id: &str) -> Result<RunLease<'_>, String> {
-        let mut active = self.active_run.lock().map_err(|_| {
+        let mut registry = self.active_run.lock().map_err(|_| {
             "AI translation couldn't start. Restart the app and try again.".to_string()
         })?;
-        if active.is_some() {
+        if registry.active.is_some() {
             return Err("Another AI translation run is already active.".to_string());
         }
-        let cancelled = Arc::new(AtomicBool::new(false));
-        *active = Some(ActiveRun {
+        // A Cancel that arrived before this run began still applies.
+        let early_cancel = registry.early_cancels.iter().position(|id| id == run_id);
+        if let Some(index) = early_cancel {
+            registry.early_cancels.remove(index);
+        }
+        let cancelled = Arc::new(AtomicBool::new(early_cancel.is_some()));
+        registry.active = Some(ActiveRun {
             id: run_id.to_string(),
             cancelled: Arc::clone(&cancelled),
         });
@@ -70,23 +104,35 @@ impl AiRuntimeState {
     /// Changing the ChatGPT sign-in cancels a running request, so it waits
     /// until no AI run is active.
     pub(crate) fn ensure_idle_for_sign_in(&self) -> Result<(), String> {
-        let active = self.active_run.lock().map_err(|_| {
+        let registry = self.active_run.lock().map_err(|_| {
             "AI translation state is unavailable. Restart the app and try again.".to_string()
         })?;
-        if active.is_some() {
+        if registry.active.is_some() {
             return Err("Finish or cancel the running AI translation first.".to_string());
         }
         Ok(())
     }
 
+    /// Cancel a run. A run that has not begun yet starts cancelled; a run that
+    /// already finished is not acknowledged.
     pub fn cancel_run(&self, run_id: &str) -> Result<bool, String> {
-        let active = self.active_run.lock().map_err(|_| {
-            "AI translation couldn't start. Restart the app and try again.".to_string()
+        let mut registry = self.active_run.lock().map_err(|_| {
+            "AI translation couldn't be cancelled. Restart the app to stop it.".to_string()
         })?;
-        let Some(active) = active.as_ref().filter(|active| active.id == run_id) else {
+        if let Some(active) = registry
+            .active
+            .as_ref()
+            .filter(|active| active.id == run_id)
+        {
+            active.cancelled.store(true, Ordering::Release);
+            return Ok(true);
+        }
+        if registry.closed.iter().any(|id| id == run_id) {
             return Ok(false);
-        };
-        active.cancelled.store(true, Ordering::Release);
+        }
+        if !registry.early_cancels.iter().any(|id| id == run_id) {
+            RunRegistry::remember(&mut registry.early_cancels, run_id);
+        }
         Ok(true)
     }
 }
@@ -97,16 +143,21 @@ impl RunLease<'_> {
     /// so it can never acknowledge a cancellation while the command reports a
     /// completed result.
     pub(crate) fn finish(mut self, outcome: AiRunOutcome) -> Result<AiRunOutcome, String> {
-        let mut active = self.state.active_run.lock().map_err(|_| {
-            "AI translation couldn't start. Restart the app and try again.".to_string()
+        let mut registry = self.state.active_run.lock().map_err(|_| {
+            "AI translation couldn't finish properly. Restart the app before the next run."
+                .to_string()
         })?;
-        let Some(current) = active.as_ref().filter(|active| active.id == self.id) else {
+        let Some(current) = registry
+            .active
+            .as_ref()
+            .filter(|active| active.id == self.id)
+        else {
             return Err(crate::internal_error(
                 "the active AI run changed while it was being finished",
             ));
         };
         let cancelled = current.cancelled.load(Ordering::Acquire);
-        *active = None;
+        registry.close(&self.id);
         self.finished = true;
         Ok(if cancelled {
             AiRunOutcome::Cancelled
@@ -124,9 +175,13 @@ impl Drop for RunLease<'_> {
         // A dropped Tauri future may leave a blocking provider worker alive.
         // Signal the shared worker flag before making room for another run.
         self.cancelled.store(true, Ordering::Release);
-        if let Ok(mut active) = self.state.active_run.lock() {
-            if active.as_ref().is_some_and(|active| active.id == self.id) {
-                *active = None;
+        if let Ok(mut registry) = self.state.active_run.lock() {
+            if registry
+                .active
+                .as_ref()
+                .is_some_and(|active| active.id == self.id)
+            {
+                registry.close(&self.id);
             }
         }
     }
@@ -1619,14 +1674,41 @@ mod tests {
         let state = AiRuntimeState::default();
         let lease = state.begin_run("run-1").unwrap();
         assert!(state.begin_run("run-2").is_err());
-        assert!(!state.cancel_run("other").unwrap());
         assert!(state.cancel_run("run-1").unwrap());
         assert_eq!(
             lease.finish(AiRunOutcome::Complete).unwrap(),
             AiRunOutcome::Cancelled
         );
         assert!(!state.cancel_run("run-1").unwrap());
-        assert!(state.begin_run("run-2").is_ok());
+        let next = state.begin_run("run-2").unwrap();
+        assert!(!next.cancelled.load(Ordering::Acquire));
+        drop(next);
+        // A dropped run is closed too: a late Cancel is not acknowledged.
+        assert!(!state.cancel_run("run-2").unwrap());
+    }
+
+    #[test]
+    fn cancel_before_the_run_begins_starts_it_cancelled() {
+        let state = AiRuntimeState::default();
+        // Cancel right after Start can reach the backend first.
+        assert!(state.cancel_run("early").unwrap());
+        assert!(state.cancel_run("early").unwrap());
+        let lease = state.begin_run("early").unwrap();
+        assert!(lease.cancelled.load(Ordering::Acquire));
+        assert_eq!(
+            lease.finish(AiRunOutcome::Complete).unwrap(),
+            AiRunOutcome::Cancelled
+        );
+        // The early cancel was used up; a new run with another id is not
+        // affected, and only a bounded number of early ids is kept.
+        let other = state.begin_run("other").unwrap();
+        assert!(!other.cancelled.load(Ordering::Acquire));
+        drop(other);
+        for index in 0..(REMEMBERED_RUN_IDS + 4) {
+            state.cancel_run(&format!("never-started-{index}")).unwrap();
+        }
+        assert!(state.active_run.lock().unwrap().early_cancels.len() <= REMEMBERED_RUN_IDS);
+        assert!(state.active_run.lock().unwrap().closed.len() <= REMEMBERED_RUN_IDS);
     }
 
     #[test]

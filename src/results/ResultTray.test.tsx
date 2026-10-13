@@ -378,6 +378,17 @@ describe("ResultTray", () => {
               },
             ],
           },
+          {
+            ...written,
+            targetPath: "C:/Games/Mods/Third/i18n/de/Dialogue.json",
+            removedRegionalFiles: [
+              {
+                path: "C:/Games/Mods/Third/i18n/de-DE/Dialogue.json",
+                shownPath: "Mods/Third/i18n/de-DE/Dialogue.json",
+                backedUp: true,
+              },
+            ],
+          },
         ],
         skipped: [],
         filesWritten: 2,
@@ -399,6 +410,11 @@ describe("ResultTray", () => {
     expect(
       screen.getByText(
         "Also removed Mods/Second/i18n/pt-BR.json, because the game would prefer it over pt.json.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Also removed Mods/Third/i18n/de-DE/Dialogue.json (backed up as Dialogue.json.bak), because the game would prefer it over de/Dialogue.json.",
       ),
     ).toBeVisible();
   });

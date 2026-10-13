@@ -13,8 +13,10 @@ in-game use; selecting a language here does not install one.
 The scan reads standard `i18n/default.json` sources and existing target-language
 files. Split locale folders such as `i18n/default/Dialogue.json` and
 `i18n/de/Dialogue.json` are also supported: source keys identify the matching
-target segment, even when filenames differ. Ambiguous or mixed layouts are
-reported rather than guessed. Multi-part packages are grouped in the mod list.
+target segment, even when filenames differ. Ambiguous layouts are reported
+rather than guessed. If an `i18n` folder has both top-level files and language
+folders, the game uses only the top-level files, and so does the app; the scan
+mentions the ignored folders. Multi-part packages are grouped in the mod list.
 Mods that do not use standard SMAPI i18n files cannot be translated here.
 
 The app opens directly in the translation workspace. Select a mod or component
@@ -81,7 +83,7 @@ Changed, Review, Done, or All leaves the Issues view. Open an affected string to
 inspect the source and target. Hover or focus an icon to see the finding in
 plain language and its effect on export.
 
-**Open Review** after an export shows the **Needs review** filter, which lists
+**Check translations** in an export result shows the **Needs review** filter, which lists
 Review and Changed strings together because both should be checked before
 release.
 
@@ -200,7 +202,9 @@ Strings with unresolved token errors are left out, so the game shows their
 English text, until they are fixed or an intentional mismatch is accepted.
 
 Export writes `i18n/<language>.json` files directly inside the selected installed
-mods. Use a translation ZIP to manage the translation as a separate mod manager
+mods. With **All mods**, JSON export writes every component the scan could
+load, even when it had to skip another component of the same package; the
+all-mods ZIP leaves such a package out instead. Use a translation ZIP to manage the translation as a separate mod manager
 entry. Existing targets receive a `.bak` backup, for example `de.json.bak`.
 Export replaces these
 targets rather than appending to them: target-only keys without an English
@@ -216,8 +220,12 @@ up and removes it, because the game would read it before `<code>.json`, and the
 result names the removed file. Translation ZIPs never include or remove such a
 file. If the original mod has one, the ZIP preview names it: tell players to
 delete it after installing your ZIP, for example on your mod page, or the game
-keeps showing some of its texts. Split
-document names such as `i18n/de/pt.json` are kept literally.
+keeps showing some of its texts. Language folders work the same way: a
+document in `i18n/de-DE/` is read with the one of the same name in `i18n/de/`,
+and export moves its texts there. Document names inside a language folder,
+such as `i18n/de/pt.json`, are kept literally. If one file of such a pair
+cannot be read, the game skips it and so does the app: the scan names it, and
+export replaces or removes it with a backup.
 
 For a combined translation archive, choose **Files… > Export…** with **All
 mods** and **ZIP**. Its preview includes all scanned components with effective

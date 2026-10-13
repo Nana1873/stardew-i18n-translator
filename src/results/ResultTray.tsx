@@ -125,6 +125,15 @@ function fileNameOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) || path;
 }
 
+/** `de.json` for a flat target, `de/Dialogue.json` for a document in a
+ * language folder, so the name says which file the game reads. */
+function targetNameOf(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const folder = parts.at(-2);
+  const name = parts.at(-1) || path;
+  return folder && folder.toLowerCase() !== "i18n" ? folder + "/" + name : name;
+}
+
 function folderOf(path: string): string | null {
   const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
   if (index < 0) return null;
@@ -286,7 +295,7 @@ function presentationFor(
                 ? " (backed up as " + fileNameOf(regional.path) + ".bak)"
                 : "") +
               ", because the game would prefer it over " +
-              fileNameOf(file.targetPath) +
+              targetNameOf(file.targetPath) +
               ".",
           });
       for (const skipped of exportResult.skipped)

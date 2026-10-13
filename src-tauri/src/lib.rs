@@ -2183,6 +2183,8 @@ struct ReviewSkips {
     items: usize,
     transient: bool,
     invalid_response: bool,
+    timeout: bool,
+    refused: bool,
     too_long: bool,
 }
 
@@ -2192,6 +2194,8 @@ impl ReviewSkips {
         match reason {
             ai_provider::ReviewSkipReason::Transient => self.transient = true,
             ai_provider::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
+            ai_provider::ReviewSkipReason::Timeout => self.timeout = true,
+            ai_provider::ReviewSkipReason::Refused => self.refused = true,
             ai_provider::ReviewSkipReason::TooLong => self.too_long = true,
         }
     }
@@ -2200,6 +2204,8 @@ impl ReviewSkips {
         self.items = self.items.saturating_add(other.items);
         self.transient |= other.transient;
         self.invalid_response |= other.invalid_response;
+        self.timeout |= other.timeout;
+        self.refused |= other.refused;
         self.too_long |= other.too_long;
     }
 }
@@ -2210,15 +2216,23 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
     if outcome != ai::AiRunOutcome::Complete || skips.items == 0 {
         return None;
     }
-    let failures = match (skips.transient, skips.invalid_response) {
-        (true, true) => Some("temporary ChatGPT failures and invalid review responses"),
-        (true, false) => Some("a temporary ChatGPT failure"),
-        (false, true) => Some("an invalid review response"),
-        (false, false) => None,
-    };
+    let mut failures = Vec::new();
+    match (skips.transient, skips.invalid_response) {
+        (true, true) => failures.push("temporary ChatGPT failures and invalid review responses"),
+        (true, false) => failures.push("a temporary ChatGPT failure"),
+        (false, true) => failures.push("an invalid review response"),
+        (false, false) => {}
+    }
+    if skips.timeout {
+        failures.push("ChatGPT took too long");
+    }
+    if skips.refused {
+        failures.push("ChatGPT refused the review");
+    }
+    let failures = (!failures.is_empty()).then(|| failures.join(", "));
     let cause = match (failures, skips.too_long) {
         (Some(failures), true) => format!("{failures}, and texts too long to review"),
-        (Some(failures), false) => failures.to_string(),
+        (Some(failures), false) => failures,
         (None, _) => "texts too long to review".to_string(),
     };
     Some(format!(
@@ -2306,6 +2320,21 @@ mod review_warning_tests {
         assert!(
             warning.contains("a temporary ChatGPT failure, and texts too long to review"),
             "{warning}"
+        );
+
+        // A timeout or refusal is named as such, not as an invalid response.
+        let mut timeout = ReviewSkips::default();
+        timeout.record(1, ReviewSkipReason::Timeout);
+        assert_eq!(
+            review_skipped_warning(AiRunOutcome::Complete, timeout).unwrap(),
+            "The quality check didn't finish for 1 text (ChatGPT took too long). Their drafts are in Review; please check them."
+        );
+        let mut refused = ReviewSkips::default();
+        refused.record(2, ReviewSkipReason::Refused);
+        refused.absorb(timeout);
+        assert_eq!(
+            review_skipped_warning(AiRunOutcome::Complete, refused).unwrap(),
+            "The quality check didn't finish for 3 texts (ChatGPT took too long, ChatGPT refused the review). Their drafts are in Review; please check them."
         );
     }
 }
@@ -3005,6 +3034,8 @@ async fn translate_with_cloud_ai(
                             "reason": match reason {
                                 ai_provider::ReviewSkipReason::Transient => "transient",
                                 ai_provider::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                                ai_provider::ReviewSkipReason::Timeout => "timeout",
+                                ai_provider::ReviewSkipReason::Refused => "refused",
                                 ai_provider::ReviewSkipReason::TooLong => "tooLong",
                             },
                         })
@@ -4249,6 +4280,25 @@ mod ai_run_contract_tests {
             "timeout"
         );
         assert!(LOCAL_AI_TIMEOUT_STOP_MESSAGE.contains("three times in a row"));
+    }
+
+    #[test]
+    fn a_connect_timeout_reads_as_unreachable_and_stops_the_run() {
+        let url = "http://127.0.0.1:1234/v1/chat/completions";
+        let unused = || unreachable!("connect and timeout failures have their own text");
+        // A server that is not running can fail with a connect timeout.
+        let dead = llm::chat_send_failure(url, true, true, unused);
+        assert_eq!(dead, llm::connection_failure_message(url));
+        assert_eq!(local_ai_error_category(&dead), "unreachable");
+        assert!(local_ai_error_is_systemic(local_ai_error_category(&dead)));
+
+        let slow = llm::chat_send_failure(url, false, true, unused);
+        assert_eq!(local_ai_error_category(&slow), "timeout");
+        assert!(!local_ai_error_is_systemic("timeout"));
+        assert_eq!(
+            llm::chat_send_failure(url, false, false, || "Other".to_string()),
+            "Other"
+        );
     }
 
     #[test]

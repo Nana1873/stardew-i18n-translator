@@ -510,7 +510,25 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, &canonical_mods) {
+            let mixed = mixed_i18n_layout(i18n_dir).unwrap_or(false);
+            if mixed {
+                // Information, not a problem: the top-level files still load.
+                skipped_components.push(SkippedComponent {
+                    package_id: None,
+                    component_unique_id: None,
+                    component_name: None,
+                    relative_location: safe_relative_location(&i18n_dir.join("default"), mods_path),
+                    reason: "The game reads only the translation files directly in the i18n folder, so its language folders, like this one, are not used.".to_string(),
+                    requires_attention: false,
+                    rest_of_package_loaded: false,
+                });
+            }
+            let split_targets = if mixed {
+                Vec::new()
+            } else {
+                unreadable_split_targets(i18n_dir, target_lang, &canonical_mods)
+            };
+            for (path, error) in split_targets {
                 warnings.push(format!(
                     "{} in {} was ignored because it cannot be read: {}",
                     safe_relative_location(&path, mods_path),
@@ -525,6 +543,18 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     build_i18n_file(&owner, &unit, &canonical_mods, target_lang, state)
                 }) {
                     Ok((file, status_counts, extra_target_keys)) => {
+                        if let Some((path, error)) =
+                            unreadable_locale_variant(Path::new(&file.target_path), |path| {
+                                read_object_within_root(path, &canonical_mods, "target")
+                            })
+                        {
+                            warnings.push(format!(
+                                "{} in {} was ignored because it cannot be read: {}",
+                                safe_relative_location(&path, mods_path),
+                                scanned.name,
+                                safe_skip_reason(&error, mods_path)
+                            ));
+                        }
                         extra_keys.extend(extra_target_keys.into_iter().map(|key| {
                             ExtraKeyDiagnostic {
                                 mod_name: scanned.name.clone(),
@@ -1135,27 +1165,30 @@ pub(crate) fn read_target_object_checked(
 }
 
 /// The canonical target with the regional variant laid over it per key.
+/// SMAPI skips a locale file it cannot read and logs it, so one broken file of
+/// the pair is skipped whichever it is (the scan names it, see
+/// [`unreadable_locale_variant`]); reading only fails when no readable file
+/// is left.
 fn read_merged_target(
     target_path: &Path,
     read: impl Fn(&Path) -> Result<serde_json::Map<String, Value>, String>,
 ) -> Result<serde_json::Map<String, Value>, String> {
-    let Some(regional) = regional_target_variant(target_path).filter(|path| path.is_file()) else {
-        return if target_path.is_file() {
-            read(target_path)
-        } else {
-            Ok(serde_json::Map::new())
-        };
+    let regional = regional_target_variant(target_path).filter(|path| path.is_file());
+    let canonical = target_path.is_file().then(|| read(target_path));
+    let (canonical, regional) = match (canonical, regional.map(|path| read(&path))) {
+        (None, None) => return Ok(serde_json::Map::new()),
+        (Some(only), None) | (None, Some(only)) => return only,
+        (Some(Err(error)), Some(Err(_))) => return Err(error),
+        (Some(canonical), Some(regional)) => (canonical, regional),
     };
-    let regional = read(&regional)?;
-    let mut merged = if target_path.is_file() {
-        // SMAPI skips a broken file; the valid regional file still applies.
-        read(target_path).unwrap_or_else(|error| {
-            log::warn!("{error}; using the regional translation file only");
+    let skip_broken = |read: Result<serde_json::Map<String, Value>, String>| {
+        read.unwrap_or_else(|error| {
+            log::warn!("{error}; using the other translation file only");
             serde_json::Map::new()
         })
-    } else {
-        serde_json::Map::new()
     };
+    let mut merged = skip_broken(canonical);
+    let regional = skip_broken(regional);
     // Keys match case-insensitively in SMAPI, so a regional key replaces the
     // canonical one even when only its casing differs.
     let regional_keys: std::collections::HashSet<String> =
@@ -1177,25 +1210,50 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
 /// The regional locale file SMAPI also reads for a target language: the game
 /// locale is regional for every language (`de-DE`, `es-ES`, `pt-BR`, ...), so
 /// `de-DE.json` is looked up before `de.json`. Only the target's own game locale
-/// counts; `en-GB.json` or `de-AT.json` are not aliases. Aliases apply to
-/// top-level locale files, never to the arbitrary document names inside a split
-/// locale folder.
+/// counts; `en-GB.json` or `de-AT.json` are not aliases.
+///
+/// In a split layout the folder name is the locale, so `i18n/de/Dialogue.json`
+/// pairs with the same document in `i18n/de-DE/`, which SMAPI also prefers per
+/// key. Document names inside a locale folder are never aliases themselves
+/// (`i18n/de/de.json` has no `i18n/de/de-DE.json` variant).
 pub(crate) fn regional_target_variant(path: &Path) -> Option<PathBuf> {
-    let in_i18n = path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("i18n"));
-    if !in_i18n {
-        return None;
-    }
+    let is_i18n = |dir: &Path| {
+        dir.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
+    };
+    let parent = path.parent()?;
     let name = path.file_name()?.to_str()?;
-    let code = name.get(..name.len().checked_sub(".json".len())?)?;
-    if !name[code.len()..].eq_ignore_ascii_case(".json") {
+    if is_i18n(parent) {
+        let code = name.get(..name.len().checked_sub(".json".len())?)?;
+        if !name[code.len()..].eq_ignore_ascii_case(".json") {
+            return None;
+        }
+        let locale = crate::glossary::game_locale_suffix(&code.to_ascii_lowercase())?;
+        return Some(path.with_file_name(format!("{locale}.json")));
+    }
+    let i18n = parent.parent().filter(|dir| is_i18n(dir))?;
+    let code = parent.file_name()?.to_str()?;
+    let locale = crate::glossary::game_locale_suffix(&code.to_ascii_lowercase())?;
+    Some(i18n.join(locale).join(name))
+}
+
+/// The one broken file of a canonical/regional pair that reading skips, with
+/// its error, so the scan can name it. `None` when both read, when only one
+/// file exists (its error stops the read instead), or when both are broken.
+fn unreadable_locale_variant(
+    target_path: &Path,
+    read: impl Fn(&Path) -> Result<serde_json::Map<String, Value>, String>,
+) -> Option<(PathBuf, String)> {
+    let regional = regional_target_variant(target_path).filter(|path| path.is_file())?;
+    if !target_path.is_file() {
         return None;
     }
-    let locale = crate::glossary::game_locale_suffix(&code.to_ascii_lowercase())?;
-    Some(path.with_file_name(format!("{locale}.json")))
+    match (read(target_path), read(&regional)) {
+        (Err(error), Ok(_)) => Some((target_path.to_path_buf(), error)),
+        (Ok(_), Err(error)) => Some((regional, error)),
+        _ => None,
+    }
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
@@ -1609,6 +1667,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
         .collect();
     let mut matches = Vec::new();
     let mut all_source_keys = None;
+    let mut broken_same_name = false;
     if target.is_dir() {
         for entry in std::fs::read_dir(&target).map_err(|e| unreadable_folder(&target, &e))? {
             let path = entry.map_err(|e| unreadable_folder(&target, &e))?.path();
@@ -1630,6 +1689,18 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                 // file only blocks the source document it would be written to;
                 // the scan reports it once (see `unreadable_split_targets`).
                 Err(_) if !same_name => continue,
+                // The same document in the regional folder (`de-DE/`) still
+                // applies, so the broken one is skipped like a broken flat
+                // `de.json` beside `de-DE.json`; the scan names it.
+                Err(_)
+                    if regional_target_variant(&path).is_some_and(|regional| {
+                        regional.is_file()
+                            && read_object_within_root(&regional, &canonical, "target").is_ok()
+                    }) =>
+                {
+                    broken_same_name = true;
+                    continue;
+                }
                 Err(error) => return Err(error),
             };
             let existing: Vec<_> = values
@@ -1660,7 +1731,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
     match matches.len() {
         0 => {
             let path = target.join(source.file_name().ok_or("Invalid split source")?);
-            if path.exists() {
+            if path.exists() && !broken_same_name {
                 // A same-named document without shared keys is a stub (`{}`) or
                 // holds only keys the source no longer has. It belongs to this
                 // segment unless it carries keys another source document owns.
@@ -1723,27 +1794,42 @@ fn unreadable_split_targets(
     broken
 }
 
-/// SMAPI merges immediate locale-directory JSON files into one namespace.
-/// Reject duplicate source keys instead of inventing a filesystem-order winner.
-fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, String> {
-    let split = dir.join("default");
-    if !split.is_dir() {
-        return Ok(vec![Ok(dir.to_path_buf())]);
+/// Whether an `i18n` folder has both top-level locale files and a `default/`
+/// language folder. SMAPI then logs an error and reads only the top-level
+/// files, ignoring every language folder.
+fn mixed_i18n_layout(dir: &Path) -> Result<bool, String> {
+    if !dir.join("default").is_dir() {
+        return Ok(false);
     }
-    if std::fs::read_dir(dir)
+    Ok(std::fs::read_dir(dir)
         .map_err(|e| unreadable_folder(dir, &e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| unreadable_folder(dir, &e))?
         .into_iter()
         .any(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|v| v.eq_ignore_ascii_case("json"))
-        })
-    {
-        return Err(
-            "Mixed top-level and language-folder translations are not supported by SMAPI.".into(),
-        );
+            let path = e.path();
+            path.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|v| v.eq_ignore_ascii_case("json"))
+        }))
+}
+
+/// SMAPI merges immediate locale-directory JSON files into one namespace.
+/// Reject duplicate source keys instead of inventing a filesystem-order winner.
+fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, String> {
+    let split = dir.join("default");
+    if mixed_i18n_layout(dir)? {
+        // Like SMAPI, use the top-level files only. Without a top-level
+        // default.json there is no English source the game reads.
+        return Ok(if dir.join("default.json").is_file() {
+            vec![Ok(dir.to_path_buf())]
+        } else {
+            Vec::new()
+        });
+    }
+    if !split.is_dir() {
+        return Ok(vec![Ok(dir.to_path_buf())]);
     }
     let mut files: Vec<_> = std::fs::read_dir(&split)
         .map_err(|e| unreadable_folder(&split, &e))?
@@ -4341,6 +4427,178 @@ mod split_locale_tests {
         (root, moddir)
     }
 
+    fn split_targets(scan: &ScanResult) -> HashMap<String, String> {
+        scan.mods[0]
+            .i18n_files
+            .iter()
+            .flat_map(|file| {
+                load_strings(
+                    Path::new(&file.default_path),
+                    Path::new(&file.target_path),
+                    &ModState::new(),
+                    &file.relative_dir,
+                )
+            })
+            .map(|row| (row.key, row.target))
+            .collect()
+    }
+
+    #[test]
+    fn regional_language_folder_wins_per_key_like_smapi() {
+        let (root, moddir) = split_fixture("split-regional-folder");
+        std::fs::write(
+            moddir.join("i18n/default/Dialogue.json"),
+            r#"{"dialogue.hello":"Hello","dialogue.bye":"Bye"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Dialogue.json"),
+            r#"{"dialogue.hello":"Hallo alt","dialogue.bye":"Tschüss"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(moddir.join("i18n/de-DE")).unwrap();
+        std::fs::write(
+            moddir.join("i18n/de-DE/Dialogue.json"),
+            r#"{"Dialogue.Hello":"Hallo neu"}"#,
+        )
+        .unwrap();
+        // A document only the regional folder has still counts.
+        std::fs::write(
+            moddir.join("i18n/de-DE/Events.json"),
+            r#"{"event.start":"Los"}"#,
+        )
+        .unwrap();
+
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.warnings.is_empty(), "{:?}", scan.warnings);
+        assert_eq!(scan.mods[0].translated_keys, 3);
+        assert!(scan.mods[0]
+            .i18n_files
+            .iter()
+            .all(|file| file.target_exists));
+        let targets = split_targets(&scan);
+        assert_eq!(targets["dialogue.hello"], "Hallo neu");
+        assert_eq!(targets["dialogue.bye"], "Tschüss");
+        assert_eq!(targets["event.start"], "Los");
+        assert_eq!(
+            regional_target_variant(&moddir.join("i18n/de/Events.json")),
+            Some(moddir.join("i18n/de-DE/Events.json"))
+        );
+        // Document names inside a language folder are never aliases.
+        assert!(regional_target_variant(&moddir.join("i18n/de/de.json"))
+            .is_some_and(|path| path.ends_with("de-DE/de.json")));
+        assert!(regional_target_variant(&moddir.join("i18n/default/Events.json")).is_none());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn broken_canonical_or_regional_document_is_skipped_and_named() {
+        let (root, moddir) = split_fixture("split-regional-broken");
+        std::fs::create_dir_all(moddir.join("i18n/de-DE")).unwrap();
+        std::fs::write(moddir.join("i18n/de/Dialogue.json"), "{ broken").unwrap();
+        std::fs::write(
+            moddir.join("i18n/de-DE/Dialogue.json"),
+            r#"{"dialogue.hello":"Hallo"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Events.json"),
+            r#"{"event.start":"Los"}"#,
+        )
+        .unwrap();
+        std::fs::write(moddir.join("i18n/de-DE/Events.json"), "{ broken").unwrap();
+
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.skipped_components.is_empty());
+        assert_eq!(scan.mods[0].i18n_files.len(), 2);
+        let targets = split_targets(&scan);
+        assert_eq!(targets["dialogue.hello"], "Hallo");
+        assert_eq!(targets["event.start"], "Los");
+        assert_eq!(scan.warnings.len(), 2, "{:?}", scan.warnings);
+        assert!(scan.warnings[0].starts_with(
+            "Example/i18n/de/Dialogue.json in Example was ignored because it cannot be read:"
+        ));
+        assert!(scan.warnings[1].starts_with(
+            "Example/i18n/de-DE/Events.json in Example was ignored because it cannot be read:"
+        ));
+        assert!(scan
+            .warnings
+            .iter()
+            .all(|warning| !warning.contains(&root.display().to_string())));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn broken_flat_regional_file_is_skipped_like_a_broken_canonical_one() {
+        let root = crate::test_support::temp_dir("scan-broken-regional-flat");
+        let moddir = root.join("Mods/Example");
+        let put = |path: &Path, body: &str| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        put(
+            &moddir.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Flat"}"#,
+        );
+        put(&moddir.join("i18n/default.json"), r#"{"k":"Hello"}"#);
+        put(&moddir.join("i18n/de.json"), r#"{"k":"Hallo"}"#);
+        put(&moddir.join("i18n/de-DE.json"), "{ broken");
+
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.skipped_components.is_empty());
+        assert_eq!(scan.mods[0].translated_keys, 1);
+        assert_eq!(scan.warnings.len(), 1);
+        assert!(scan.warnings[0].starts_with(
+            "Example/i18n/de-DE.json in Example was ignored because it cannot be read:"
+        ));
+
+        // With both files broken nothing readable is left: the component is
+        // skipped as before.
+        put(&moddir.join("i18n/de.json"), "{ broken");
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.mods.is_empty());
+        assert_eq!(scan.skipped_components.len(), 1);
+        assert!(scan.skipped_components[0].requires_attention);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn mixed_layout_uses_the_top_level_files_like_smapi() {
+        let (root, moddir) = split_fixture("split-mixed-layout");
+        std::fs::write(moddir.join("i18n/default.json"), r#"{"top":"Top"}"#).unwrap();
+        std::fs::write(moddir.join("i18n/de.json"), r#"{"top":"Oben"}"#).unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Dialogue.json"),
+            r#"{"dialogue.hello":"Hallo"}"#,
+        )
+        .unwrap();
+        std::fs::write(moddir.join("i18n/de/Broken.json"), "{ broken").unwrap();
+
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.warnings.is_empty(), "{:?}", scan.warnings);
+        let files = &scan.mods[0].i18n_files;
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative_dir, "i18n");
+        assert_eq!(scan.mods[0].translated_keys, 1);
+        assert_eq!(scan.skipped_components.len(), 1);
+        let note = &scan.skipped_components[0];
+        assert!(!note.requires_attention);
+        assert_eq!(note.relative_location, "Example/i18n/default");
+        assert_eq!(
+            note.reason,
+            "The game reads only the translation files directly in the i18n folder, so its language folders, like this one, are not used."
+        );
+
+        // Without a top-level default.json the game has no English source to
+        // translate here, so nothing loads, and the note stays information.
+        std::fs::remove_file(moddir.join("i18n/default.json")).unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.mods.is_empty());
+        assert_eq!(scan.skipped_components.len(), 1);
+        assert!(!scan.skipped_components[0].requires_attention);
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[test]
     fn one_unreadable_split_target_is_reported_once_and_keeps_the_component() {
         let (root, moddir) = split_fixture("split-broken-other");
@@ -4482,10 +4740,12 @@ mod split_locale_tests {
         assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
             .mods
             .is_empty());
+        // With a top-level default.json, SMAPI uses only the top-level files,
+        // so the duplicate keys in the language folders no longer matter.
         std::fs::write(moddir.join("i18n/default.json"), "{}").unwrap();
-        assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
-            .mods
-            .is_empty());
+        let mixed = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert_eq!(mixed.mods[0].i18n_files.len(), 1);
+        assert_eq!(mixed.mods[0].i18n_files[0].relative_dir, "i18n");
     }
 }
 

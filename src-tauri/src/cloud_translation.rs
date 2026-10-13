@@ -440,6 +440,12 @@ where
                 );
                 match failure {
                     ProviderFailure::Transient(..) => ReviewSkipReason::Transient,
+                    ProviderFailure::InvalidResponse(error) if error == super::TIMEOUT_MESSAGE => {
+                        ReviewSkipReason::Timeout
+                    }
+                    ProviderFailure::InvalidResponse(error) if error == super::REFUSAL_MESSAGE => {
+                        ReviewSkipReason::Refused
+                    }
                     ProviderFailure::InvalidResponse(_) => ReviewSkipReason::InvalidResponse,
                     // Messages are configuration or environment errors such as
                     // a signed-out or missing cloud provider. They get no retry and
@@ -1141,15 +1147,16 @@ where
                 }
             }
             // A same-size retry after the five-minute limit would only time out
-            // again: hand it straight to the split.
-            Err(ProviderFailure::InvalidResponse(error)) if error == super::TIMEOUT_MESSAGE => {
+            // again, and a refusal concerns the content, so the same texts
+            // would likely be refused again: hand both straight to the split.
+            Err(ProviderFailure::InvalidResponse(error))
+                if error == super::TIMEOUT_MESSAGE || error == super::REFUSAL_MESSAGE =>
+            {
                 return Err(ProviderFailure::InvalidResponse(error));
             }
             Err(ProviderFailure::InvalidResponse(error)) if !structure_retried => {
                 structure_retried = true;
-                // A refusal is not a structural error; do not tell the model
-                // its previous response failed the validator.
-                structural_error = (error != super::REFUSAL_MESSAGE).then_some(error);
+                structural_error = Some(error);
                 report(ProviderProgressEvent::StructureRetry);
             }
             result => return result,

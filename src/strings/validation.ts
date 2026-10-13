@@ -286,7 +286,11 @@ export function tokenDifferences(
     const expected = sourceTokens.get(token) ?? 0;
     if (expected < count) addDifference(token, expected, count);
   }
-  return differences;
+  // Same order as Rust `token_differences`, so the editor and the export
+  // explain several differences in the same order.
+  return differences.sort((left, right) =>
+    compareCodePoints(left.token, right.token),
+  );
 }
 
 export function validate(source: string, target: string): ValidationIssue[] {

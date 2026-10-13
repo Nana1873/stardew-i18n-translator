@@ -56,6 +56,9 @@ does not imply this intent. Protected-token validation still applies.
 - In a split `i18n/<lang>/` folder, an unreadable locale document blocks only
   the source document of the same name; other unreadable documents are
   ignored for export and reported once as a scan warning.
+- An `i18n` folder with both top-level files and language folders loads like
+  SMAPI: only the top-level files are used. The scan lists its language
+  folders as information, not as a problem.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key
   matching. Extra target keys are informational: they do not count toward
   progress or block export, and a rewritten target omits them.
@@ -178,7 +181,10 @@ Export is explicit and applies to the current mod or all scanned mods. One
 **Files… > Export…** dialog asks for the scope (**This mod** or **All mods**)
 and the output (**ZIP** or **JSON** into the Mods folder), then shows the
 matching preview. It opens on This mod + ZIP (All mods without a selected
-mod) and keeps the last choice for the session. JSON export:
+mod) and keeps the last choice for the session. All mods JSON export works per
+component: it writes every component the scan loaded, even when the scan skipped
+another component of the same package, while the all-mods ZIP leaves a package
+with a skipped component out. JSON export:
 
 - Omit empty targets and strings with unaccepted token errors so SMAPI falls
   back to `default.json`. Non-empty Done, Review, and Changed values are
@@ -197,20 +203,25 @@ mod) and keeps the last choice for the session. JSON export:
 SMAPI looks up translations by the game's regional locale first (`de-DE`,
 `es-ES`, `pt-BR`, `zh-CN`, ...), then the language code. Flat imports for every
 game language read `i18n/<lang>-<REGION>.json` together with `i18n/<lang>.json`;
-file names match case-insensitively and the regional value wins per key. A
-broken canonical file is tolerated when reading, but JSON export still reads
-every variant strictly and stops on a broken one. Only the target language's
+file names match case-insensitively and the regional value wins per key. Split
+layouts do the same per document: `i18n/<lang>-<REGION>/X.json` is read
+together with `i18n/<lang>/X.json`, also when only the regional document
+exists. Like SMAPI, which skips a file it cannot read, a broken canonical or
+regional file of such a pair is skipped while the other one still applies; the
+scan names the skipped file. JSON export does not stop on it, since it replaces
+or removes that file with a `.bak` backup. Only the target language's
 own regional code counts, so `en-GB.json` is untouched. Successful JSON exports
-canonicalize to `i18n/<lang>.json`, back up and remove the regional file, and
-name it in the result tray and Activity log relative to the Mods folder.
+canonicalize to `i18n/<lang>.json` (or `i18n/<lang>/X.json`), back up and
+remove the regional file, and name it in the result tray and Activity log
+relative to the Mods folder.
 Translation ZIPs never contain a regional file and do not change or remove
 files in the Mods folder. When the original mod still has one, the ZIP preview
 shows one plain, non-blocking line per mod naming it relative to the Mods
 folder. It addresses the translator building the ZIP, since players who install
 it never see the app: tell players to delete that file after installing, for
-example on the mod page. Split
-document names are literal and do not trigger this language-filename
-migration. Existing targets, including omitted orphan keys, remain recoverable
+example on the mod page. Document names inside a language folder are literal
+and do not trigger this language-filename migration (`i18n/de/pt.json` stays
+as is). Existing targets, including omitted orphan keys, remain recoverable
 from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files for separate

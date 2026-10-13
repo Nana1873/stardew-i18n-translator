@@ -15,6 +15,31 @@ export interface ExportChoice {
   output: ExportOutput;
 }
 
+/** The choice the Export… dialog opens with: the remembered one, starting on
+ * This mod + ZIP. Without a selected mod it shows All mods. */
+export function openingExportChoice(
+  remembered: ExportChoice | null,
+  modAvailable: boolean,
+): ExportChoice {
+  return {
+    scope: modAvailable ? (remembered?.scope ?? "mod") : "all",
+    output: remembered?.output ?? "zip",
+  };
+}
+
+/** What to remember of a shown choice. Without a selected mod, All mods is
+ * the only option rather than the user's choice, so the remembered scope
+ * stays as it was. */
+export function rememberedExportChoice(
+  remembered: ExportChoice | null,
+  shown: ExportChoice,
+  modAvailable: boolean,
+): ExportChoice {
+  return modAvailable
+    ? shown
+    : { scope: remembered?.scope ?? "mod", output: shown.output };
+}
+
 type ChoiceGroup = "mods" | "output";
 
 /** Switching output swaps the JSON and ZIP dialogs. These session values keep

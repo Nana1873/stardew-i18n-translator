@@ -145,7 +145,8 @@ powershell -ExecutionPolicy Bypass -File scripts/create-language-smoke-fixture.p
 
 The script creates an ignored `target/language-smoke/` tree and prints the game,
 Mods, and LLM-result paths to use in the app. It includes a Portuguese
-`pt-BR.json` fallback; exporting should produce `pt.json`. It generates test
+`pt-BR.json`, which is read together with `pt.json` and wins per key; exporting
+should write `pt.json` and back up and remove `pt-BR.json`. It generates test
 inputs, not an automated pass/fail result. Re-running it recreates those inputs,
 so do not point `-OutputRoot` at real game or mod data.
 

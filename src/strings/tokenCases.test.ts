@@ -33,12 +33,26 @@ for (const testCase of fixture.comparisons) {
   });
 }
 
-for (const testCase of fixture.explanations) {
+for (const testCase of fixture.explanations as {
+  source: string;
+  target: string;
+  text: string;
+  differences?: unknown[];
+  errorsText?: string;
+}[]) {
   it(`explains ${JSON.stringify(testCase.target)} like the export does`, () => {
-    const messages = describeTokenIssue(
-      tokenDifferences(testCase.source, testCase.target),
-      testCase.target,
-    ).map((item) => item.message);
-    expect(messages.join(" ")).toBe(testCase.text);
+    const differences = tokenDifferences(testCase.source, testCase.target);
+    const explain = (list: typeof differences) =>
+      describeTokenIssue(list, testCase.target)
+        .map((item) => item.message)
+        .join(" ");
+    expect(explain(differences)).toBe(testCase.text);
+    // Order and severity per difference, as Rust `token_differences`.
+    if (testCase.differences) expect(differences).toEqual(testCase.differences);
+    // The export explains only the errors that leave a string out.
+    if (testCase.errorsText !== undefined)
+      expect(
+        explain(differences.filter((item) => item.severity === "error")),
+      ).toBe(testCase.errorsText);
   });
 }

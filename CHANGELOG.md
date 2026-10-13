@@ -314,6 +314,26 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - The automatic rescan after an AI run keeps the "new or changed strings"
   scan filter.
 - `.ZIP` in any letter case is accepted as the translation ZIP destination.
+- Language folders such as `i18n/de-DE/` are read together with `i18n/de/`
+  per document, like the game does. JSON export moves their texts into
+  `i18n/de/`, backs up and removes the regional documents and names them; the
+  ZIP preview points them out like regional files.
+- A mod whose `i18n` folder has both top-level files and language folders is
+  no longer skipped. Like the game, the app uses the top-level files, and the
+  scan notes that the language folders are not used.
+- A broken `de.json` or `de-DE.json` next to a readable one is skipped like
+  the game does and named in the scan, whichever of the two it is. JSON export
+  no longer stops on it and keeps a backup when replacing or removing it.
+- The editor explains several token problems of one string in the same order
+  as the export result.
+- Cancel right after starting an AI translation of one string now stops it;
+  before, the run could still finish.
+- When ChatGPT refuses some texts, the batch is split right away instead of
+  being sent again unchanged. A quality check that took too long or was
+  refused now says so instead of reporting an invalid review response.
+- A Local AI server that is not running stops the run after the first attempt
+  with the "Could not reach Local AI" message, also when the connection times
+  out, instead of being treated as a slow model.
 
 ## [2.4.0] - 2026-10-11
 
