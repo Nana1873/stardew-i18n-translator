@@ -87,11 +87,20 @@
 #stardew-i18n-translator .desktop-xd-seg button + button {
   border-left: 1px solid var(--translator-border-strong);
 }
-#stardew-i18n-translator .desktop-xd-seg button:hover:not(:disabled) {
+/* Hover only lightens unselected options; the selected fill stays gold under
+   the pointer and with focus, which only adds the ring below. */
+#stardew-i18n-translator
+  .desktop-xd-seg
+  button:not([aria-checked="true"]):hover:not(:disabled) {
   color: var(--translator-text);
   background: var(--translator-surface-soft);
 }
-#stardew-i18n-translator .desktop-xd-seg button[aria-checked="true"] {
+#stardew-i18n-translator .desktop-xd-seg button[aria-checked="true"],
+#stardew-i18n-translator .desktop-xd-seg button[aria-checked="true"]:hover,
+#stardew-i18n-translator .desktop-xd-seg button[aria-checked="true"]:focus,
+#stardew-i18n-translator
+  .desktop-xd-seg
+  button[aria-checked="true"]:focus-visible {
   color: var(--translator-brand);
   background: var(--translator-brand-soft);
   box-shadow: inset 0 0 0 1px var(--translator-brand);
