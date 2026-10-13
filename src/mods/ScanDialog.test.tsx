@@ -384,6 +384,50 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
   });
 
+  it("counts a mod folder the game doesn't load apart from translation folders", () => {
+    const unowned = (relativeLocation: string, reason: string) => ({
+      packageId: null,
+      componentUniqueId: null,
+      componentName: null,
+      relativeLocation,
+      reason,
+      requiresAttention: false,
+      restOfPackageLoaded: false,
+    });
+    render(
+      <ScanDialog
+        scanning={false}
+        result={{
+          ...RESULT,
+          warnings: [],
+          skippedComponents: [
+            unowned(
+              "Pkg/[CP] X/manifest.json",
+              "Mods/Pkg/[CP] X has a manifest.json, but the game doesn't load it because Mods/Pkg already contains other files.",
+            ),
+            unowned(
+              "Mod/optional/Manifest.json",
+              "This manifest.json is inside another mod that has its own manifest.json, so the game does not load it.",
+            ),
+            unowned(
+              "Loose/i18n",
+              "No manifest.json in this folder or a parent folder, so SMAPI does not load these translations.",
+            ),
+          ],
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getAllByText(
+        /2 mod folders the game doesn't load and 1 translation folder the game doesn't use were ignored/,
+      )[0],
+    ).toBeInTheDocument();
+    expect(screen.getByText("Pkg/[CP] X/manifest.json")).toBeInTheDocument();
+  });
+
   it("shows a duplicate mod ID as one card that names both folders", () => {
     const duplicateSkip = (folder: string) => ({
       packageId: folder,

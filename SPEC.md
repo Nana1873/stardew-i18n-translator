@@ -62,6 +62,25 @@ does not imply this intent. Protected-token validation still applies.
 - Translate only `i18n` folders beside a `manifest.json`, the only ones SMAPI
   loads; components with their own manifest each count. A deeper `i18n` folder
   without one is listed as information, not offered as a target.
+- Offer a component only if SMAPI reads its folder as a mod folder. SMAPI
+  searches the Mods folder and goes into a subfolder only while that subfolder
+  holds other folders and no relevant file; the first folder with a relevant
+  file is read as one mod, and nothing inside it is searched. The Mods folder
+  itself is never a mod, even with a `manifest.json` in it. Files SMAPI
+  ignores are those starting with `.`, readmes and documents (`.md`, `.txt`,
+  `.doc`, `.docx`, `.rtf`), the image formats `.bmp`, `.gif`, `.ico`, `.jpeg`,
+  `.jpg`, `.png`, `.psd`, `.tif` and `.xcf`, the archives `.rar`, `.zip`, `.7z`
+  and `.tar`, backups (`.bak`, `.old`,
+  `.backup`), shortcuts (`.url`, `.lnk`), `desktop.ini`, `Thumbs.db`,
+  `.DS_Store`, `._*`, and `__folder_managed_by_vortex`; it also skips folders
+  named `__MACOSX` or `mcs`. So `Pkg/[CP] X` and `Pkg/[JA] X` both load when
+  `Pkg` holds only those folders and a readme, but neither loads when `Pkg`
+  also holds a `config.json`, and `Mod/optional` never loads when `Mod` has its
+  own `manifest.json`. A `manifest.json` SMAPI never reaches is listed as
+  information (path relative to the Mods folder) instead of a component, and
+  `i18n` folders below it are not listed again. Community language packs follow
+  the same rule. A folder reachable both directly and through a folder link is
+  judged by its real path.
 - Ignore Content Patcher `assets/i18n` data. Exclude detected community language
   packs from translation targets as expected information, not a warning.
 - Report malformed components and skip them without inventing empty rows or
