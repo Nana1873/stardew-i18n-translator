@@ -75,8 +75,8 @@ they are unavailable after an incomplete scan rather than being guessed.
 Check the selected language, search scope, and filters first. Existing target
 files load as Done, while external LLM imports enter Review.
 
-Saving an edit updates `data/`; **Files… > Export JSON for selected mod…**
-writes it into the mod. See
+Saving an edit updates `data/`; **Files… > Export…** with **This mod** and
+**JSON** writes it into the mod. See
 [export behavior](user-guide.md#export-translation-files) for what is included,
 omitted, or backed up.
 

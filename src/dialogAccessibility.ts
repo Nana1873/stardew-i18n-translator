@@ -26,9 +26,44 @@ function focusableElements(dialog: HTMLElement): HTMLElement[] {
 }
 
 interface IsolationSnapshot {
-  element: HTMLElement;
+  /** How many open dialogs currently hide this element. */
+  count: number;
   inert: boolean;
   ariaHidden: string | null;
+}
+
+/** Where focus returns when a dialog closes, by dialog element. */
+const returnTargets = new WeakMap<HTMLElement, HTMLElement | null>();
+
+/** The state before the first dialog hid an element. Dialogs can overlap
+ * briefly (the Export… dialog swaps its JSON and ZIP previews), so the
+ * original state is restored only when the last of them closes. */
+const isolated = new Map<HTMLElement, IsolationSnapshot>();
+
+function hide(element: HTMLElement) {
+  const snapshot = isolated.get(element);
+  if (snapshot) {
+    snapshot.count++;
+    return;
+  }
+  isolated.set(element, {
+    count: 1,
+    inert: element.inert,
+    ariaHidden: element.getAttribute("aria-hidden"),
+  });
+  element.inert = true;
+  element.setAttribute("aria-hidden", "true");
+}
+
+function release(element: HTMLElement) {
+  const snapshot = isolated.get(element);
+  if (!snapshot) return;
+  snapshot.count--;
+  if (snapshot.count > 0) return;
+  isolated.delete(element);
+  element.inert = snapshot.inert;
+  if (snapshot.ariaHidden == null) element.removeAttribute("aria-hidden");
+  else element.setAttribute("aria-hidden", snapshot.ariaHidden);
 }
 
 /**
@@ -41,33 +76,21 @@ export function useModalIsolation(dialogRef: RefObject<HTMLElement | null>) {
     const root = dialog?.closest<HTMLElement>("#stardew-i18n-translator");
     if (!dialog || !root) return;
 
-    const snapshots: IsolationSnapshot[] = [];
+    const hidden: HTMLElement[] = [];
     let active: HTMLElement = dialog;
     while (active !== root) {
       const parent = active.parentElement;
       if (!parent) break;
       for (const sibling of Array.from(parent.children)) {
         if (!(sibling instanceof HTMLElement) || sibling === active) continue;
-        snapshots.push({
-          element: sibling,
-          inert: sibling.inert,
-          ariaHidden: sibling.getAttribute("aria-hidden"),
-        });
-        sibling.inert = true;
-        sibling.setAttribute("aria-hidden", "true");
+        hide(sibling);
+        hidden.push(sibling);
       }
       active = parent;
     }
 
     return () => {
-      for (const snapshot of snapshots.reverse()) {
-        snapshot.element.inert = snapshot.inert;
-        if (snapshot.ariaHidden == null) {
-          snapshot.element.removeAttribute("aria-hidden");
-        } else {
-          snapshot.element.setAttribute("aria-hidden", snapshot.ariaHidden);
-        }
-      }
+      for (const element of hidden.reverse()) release(element);
     };
   }, [dialogRef]);
 }
@@ -103,17 +126,25 @@ export function useDialogAccessibility({
   }, [dialogRef, initialFocusSelector]);
 
   useEffect(() => {
-    returnFocusRef.current =
+    const active =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    returnFocusRef.current = active;
+    // When this dialog replaces another one (the Export… dialog swaps its
+    // JSON and ZIP previews), focus returns to where that one came from.
+    const owner = active?.closest<HTMLElement>('[aria-modal="true"]');
+    const fallback = owner ? (returnTargets.get(owner) ?? null) : null;
+    const dialog = dialogRef.current;
+    if (dialog) returnTargets.set(dialog, fallback ?? active);
     const frame = requestAnimationFrame(focusInitial);
     return () => {
       cancelAnimationFrame(frame);
       const target = returnFocusRef.current;
       if (target?.isConnected) target.focus();
+      else if (fallback?.isConnected) fallback.focus();
     };
-  }, [focusInitial]);
+  }, [dialogRef, focusInitial]);
 
   const onDialogKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
