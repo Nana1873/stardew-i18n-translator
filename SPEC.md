@@ -173,13 +173,17 @@ Export is explicit and applies to the current mod or all scanned mods:
 
 SMAPI looks up translations by the game's regional locale first (`de-DE`,
 `es-ES`, `pt-BR`, `zh-CN`, ...), then the language code. Flat imports for every
-game language read `i18n/<lang>-<REGION>.json` together with `i18n/<lang>.json`
-(file names case-insensitive, regional value wins per key, a broken canonical
-file tolerated). Only the target language's own regional code counts, so
-`en-GB.json` is untouched. Successful exports canonicalize to `i18n/<lang>.json`,
-backing up and removing the regional file and listing it in the result. Split document names are
-literal and do not trigger this language-filename migration. Existing targets, including
-omitted orphan keys, remain recoverable from their export backup.
+game language read `i18n/<lang>-<REGION>.json` together with `i18n/<lang>.json`;
+file names match case-insensitively and the regional value wins per key. A
+broken canonical file is tolerated when reading, but JSON export still reads
+every variant strictly and stops on a broken one. Only the target language's
+own regional code counts, so `en-GB.json` is untouched. Successful JSON exports
+canonicalize to `i18n/<lang>.json`, back up and remove the regional file, and
+name it in the result tray and Activity log relative to the Mods folder.
+Translation ZIPs do not change or remove files in the Mods folder. Split
+document names are literal and do not trigger this language-filename
+migration. Existing targets, including omitted orphan keys, remain recoverable
+from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files for separate
 installation with Vortex or MO2. Each component's manifest folder name is its

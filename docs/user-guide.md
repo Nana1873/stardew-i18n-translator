@@ -199,8 +199,10 @@ if you need to restore an earlier file.
 
 For flat locale files, export writes `i18n/<code>.json`, for example
 `i18n/de.json`. A regional file for the same language, such as `i18n/de-DE.json`,
-`i18n/pt-BR.json` or `i18n/zh-CN.json`, is accepted on import and backed up and
-removed during export, because the game would read it before `<code>.json`. Split document names such as `i18n/de/pt.json` are kept literally.
+`i18n/pt-BR.json` or `i18n/zh-CN.json`, is accepted on import. Export backs it
+up and removes it, because the game would read it before `<code>.json`, and the
+result names the removed file. Translation ZIPs leave such files alone. Split
+document names such as `i18n/de/pt.json` are kept literally.
 
 For a combined translation archive, choose **Files… > Export ZIP for all
 mods…**. Its preview includes all scanned components with effective

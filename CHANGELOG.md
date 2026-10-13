@@ -10,9 +10,6 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
-- Regional translation files such as `de-DE.json` or `es-ES.json` are read
-  together with `de.json` for every language, as already done for `pt-BR.json`
-  and `zh-CN.json`. Exports back them up, remove them, and list them.
 - Glossaries are built only from the game's own `Content/Strings` files; the
   app no longer reads a `Content (unpacked)` folder or points to
   StardewXnbHack. Community language packs take their English names from the
@@ -121,6 +118,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Regional translation files such as `de-DE.json` or `es-ES.json` are read
+  together with `de.json` for every language, as already done for `pt-BR.json`
+  and `zh-CN.json`; the game prefers them over `de.json`. JSON exports back
+  them up and remove them, and the result and Activity log now name each
+  removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs leave
+  them alone.
 - A glossary built in Settings shows its hints in the editor right away,
   also when Settings is then closed without saving, instead of only after a
   restart.
