@@ -342,6 +342,15 @@
 #stardew-i18n-translator .desktop-xd-alert.is-error {
   border-left-color: var(--translator-red);
 }
+/* Plain information, such as a regional file left in the original mod */
+#stardew-i18n-translator .desktop-xd-alert.is-info {
+  flex-direction: column;
+  gap: 4px;
+  border-left-color: var(--translator-border-strong);
+}
+#stardew-i18n-translator .desktop-xd-alert.is-info p {
+  margin: 0;
+}
 #stardew-i18n-translator .desktop-xd-alert svg {
   color: var(--translator-orange);
   margin-top: 1px;

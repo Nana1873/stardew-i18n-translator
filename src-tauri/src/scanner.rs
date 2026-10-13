@@ -1124,9 +1124,9 @@ pub(crate) fn read_target_file(path: &Path) -> Result<serde_json::Map<String, Va
 }
 
 /// Read the canonical target file merged with SMAPI's regional file
-/// (`pt-BR.json`, `zh-CN.json`). SMAPI reads both and the regional value wins
+/// (`de-DE.json`, `pt-BR.json`, ...). SMAPI reads both and the regional value wins
 /// per key, so keys that only the canonical file has stay translated. The
-/// scanned path remains `pt.json`/`zh.json`: exports write that file and remove
+/// scanned path remains `de.json`/`pt.json`/...: exports write that file and remove
 /// the regional one, whose values they already contain.
 pub(crate) fn read_target_object_checked(
     target_path: &Path,
@@ -1174,12 +1174,12 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
     target_path.to_path_buf()
 }
 
-/// Regional locale files mods commonly ship for Portuguese and Chinese
-/// (`pt-BR.json` before `pt.json`, `zh-CN.json` before `zh.json`). Other game
-/// locales such as `de-DE` are not aliased yet (unverified against SMAPI's
-/// lookup chain). Aliases apply
-/// to top-level locale files, never to the arbitrary document names inside a
-/// split locale folder.
+/// The regional locale file SMAPI also reads for a target language: the game
+/// locale is regional for every language (`de-DE`, `es-ES`, `pt-BR`, ...), so
+/// `de-DE.json` is looked up before `de.json`. Only the target's own game locale
+/// counts; `en-GB.json` or `de-AT.json` are not aliases. Aliases apply to
+/// top-level locale files, never to the arbitrary document names inside a split
+/// locale folder.
 pub(crate) fn regional_target_variant(path: &Path) -> Option<PathBuf> {
     let in_i18n = path
         .parent()
@@ -1190,14 +1190,12 @@ pub(crate) fn regional_target_variant(path: &Path) -> Option<PathBuf> {
         return None;
     }
     let name = path.file_name()?.to_str()?;
-    let regional = if name.eq_ignore_ascii_case("pt.json") {
-        "pt-BR.json"
-    } else if name.eq_ignore_ascii_case("zh.json") {
-        "zh-CN.json"
-    } else {
+    let code = name.get(..name.len().checked_sub(".json".len())?)?;
+    if !name[code.len()..].eq_ignore_ascii_case(".json") {
         return None;
-    };
-    Some(path.with_file_name(regional))
+    }
+    let locale = crate::glossary::game_locale_suffix(&code.to_ascii_lowercase())?;
+    Some(path.with_file_name(format!("{locale}.json")))
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
@@ -2650,6 +2648,31 @@ mod tests {
     }
 
     #[test]
+    fn spanish_regional_file_alone_counts_as_an_existing_target() {
+        let root = crate::test_support::temp_dir("scan-spanish-regional-only");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"k\": \"Hello\", \"other\": \"World\" }",
+        );
+        let regional = mod_dir.join("i18n").join("es-ES.json");
+        write(&regional, "{ \"k\": \"Hola\" }");
+
+        let result = scan_mods(&root, "es", &root);
+        let file = &result.mods[0].i18n_files[0];
+        assert!(file.target_exists);
+        assert!(file.target_path.ends_with("es.json"));
+        assert_eq!(target_read_path(Path::new(&file.target_path)), regional);
+        assert_eq!(result.mods[0].translated_keys, 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn canonical_and_regional_targets_merge_per_key() {
         // SMAPI reads pt-BR.json, then pt.json, per key. A key only pt.json
         // has must stay translated instead of reading as Open.
@@ -2711,6 +2734,34 @@ mod tests {
         let merged = read_target_object_checked(&i18n.join("pt.json")).unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(merged["greeting"], "Olá");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn regional_game_locale_files_merge_for_every_language() {
+        let root = crate::test_support::temp_dir("scan-regional-locales");
+        let i18n = root.join("i18n");
+        write(&i18n.join("de.json"), "{ \"a\": \"alt\", \"b\": \"B\" }");
+        write(&i18n.join("de-DE.json"), "{ \"a\": \"neu\" }");
+        let merged = read_target_object_checked(&i18n.join("de.json")).unwrap();
+        assert_eq!(merged["a"], "neu");
+        assert_eq!(merged["b"], "B");
+
+        write(&i18n.join("es-ES.json"), "{ \"a\": \"Hola\" }");
+        write(&i18n.join("es.json"), "{ broken");
+        let merged = read_target_object_checked(&i18n.join("es.json")).unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged["a"], "Hola");
+
+        // Only the target's own game locale counts.
+        write(&i18n.join("en-GB.json"), "{ \"a\": \"Cheers\" }");
+        write(&i18n.join("fr-CA.json"), "{ \"a\": \"Salut\" }");
+        write(&i18n.join("fr.json"), "{ \"a\": \"Bonjour\" }");
+        let merged = read_target_object_checked(&i18n.join("fr.json")).unwrap();
+        assert_eq!(merged["a"], "Bonjour");
+        assert!(regional_target_variant(&i18n.join("en.json")).is_none());
+        assert!(regional_target_variant(&i18n.join("default.json")).is_none());
+        assert!(regional_target_variant(&root.join("de.json")).is_none());
         std::fs::remove_dir_all(&root).ok();
     }
 

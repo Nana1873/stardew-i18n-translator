@@ -225,6 +225,13 @@ export function TranslationZipDialog({
                   )}
                 </div>
               )}
+              {(preview.regionalFileHints?.length ?? 0) > 0 && (
+                <div className="desktop-xd-alert is-info">
+                  {preview.regionalFileHints?.map((hint) => (
+                    <p key={hint}>{hint}</p>
+                  ))}
+                </div>
+              )}
 
               <div className="desktop-xd-sections">
                 <ExportSection

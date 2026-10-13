@@ -373,6 +373,83 @@ fn compact_export_warnings(skipped: &[export::SkippedKey]) -> Vec<String> {
     warnings
 }
 
+/// The Activity log sentence about regional files (`de-DE.json`) an export
+/// removed, with a leading space, or an empty string when none was removed.
+fn regional_removal_summary<'a>(
+    files: impl Iterator<Item = &'a export::ExportFileResult>,
+) -> String {
+    let removed = files
+        .flat_map(|file| {
+            file.removed_regional_files
+                .iter()
+                .map(move |removed| (file, removed))
+        })
+        .collect::<Vec<_>>();
+    match removed.as_slice() {
+        [] => String::new(),
+        [(file, removed)] => format!(" {}", removed.sentence(&file.target_path)),
+        many => format!(
+            " Also removed {} regional translation files{}, because the game would prefer them over the exported files.",
+            many.len(),
+            if many.iter().all(|(_, removed)| removed.backed_up) {
+                " (backed up as .bak files)"
+            } else {
+                ""
+            }
+        ),
+    }
+}
+
+#[cfg(test)]
+mod regional_removal_summary_tests {
+    use super::export::{ExportFileResult, RemovedRegionalFile};
+
+    fn file(target: &str, removed: &[(&str, bool)]) -> ExportFileResult {
+        ExportFileResult {
+            target_path: target.into(),
+            removed_regional_files: removed
+                .iter()
+                .map(|(path, backed_up)| RemovedRegionalFile {
+                    path: format!("C:/Games/{path}"),
+                    shown_path: (*path).into(),
+                    backed_up: *backed_up,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn names_one_removed_regional_file_and_counts_several() {
+        let none = [file("C:/Games/Mods/A/i18n/de.json", &[])];
+        assert_eq!(super::regional_removal_summary(none.iter()), "");
+
+        let one = [file(
+            "C:/Games/Mods/A/i18n/de.json",
+            &[("Mods/A/i18n/de-DE.json", true)],
+        )];
+        assert_eq!(
+            super::regional_removal_summary(one.iter()),
+            " Also removed Mods/A/i18n/de-DE.json (backed up as de-DE.json.bak), because the game would prefer it over de.json."
+        );
+
+        let several = [
+            file(
+                "C:/Games/Mods/A/i18n/pt.json",
+                &[("Mods/A/i18n/pt-BR.json", true)],
+            ),
+            file(
+                "C:/Games/Mods/B/i18n/pt.json",
+                &[("Mods/B/i18n/pt-BR.json", false)],
+            ),
+        ];
+        assert_eq!(
+            super::regional_removal_summary(several.iter()),
+            " Also removed 2 regional translation files, because the game would prefer them over the exported files."
+        );
+    }
+}
+
 // Async export commands may overlap; their temporary files and rollback paths must not.
 static EXPORT_WRITE: Mutex<()> = Mutex::new(());
 
@@ -492,7 +569,7 @@ fn export_mod(
                 .ok_or_else(|| "Refusing export: no component was selected.".to_string())?;
             export::validate_paths(&mods_root, &target_lang, &resolved.files)?;
             let translation_config = translations::language_root(&config, &target_lang)?;
-            let result = export::export_mod(
+            let mut result = export::export_mod(
         &translation_config,
         &resolved.mod_unique_id,
         &resolved.files,
@@ -500,6 +577,8 @@ fn export_mod(
     .inspect_err(|error| {
         log::error!(target: "app", "export_mod({}) failed: {error}", resolved.mod_unique_id)
     })?;
+            export::show_removed_regional_files(&mut result.files, &mods_root);
+            let regional_summary = regional_removal_summary(result.files.iter());
             let changed_files = result
                 .files
                 .iter()
@@ -525,7 +604,7 @@ fn export_mod(
                     },
                     title: "Translation export completed".to_string(),
                     summary: format!(
-                        "{} translation {} updated, {} removed.",
+                        "{} translation {} updated, {} removed.{regional_summary}",
                         result.files_written,
                         if result.files_written == 1 {
                             "file"
@@ -602,9 +681,18 @@ fn export_all_mods(
             // not only within each individual group.
             export::validate_paths(&mods_root, &target_lang, &files)?;
             let translation_config = translations::language_root(&config, &target_lang)?;
-            let result = export::export_all_mods(&translation_config, &mods).inspect_err(
+            let mut result = export::export_all_mods(&translation_config, &mods).inspect_err(
                 |error| log::error!(target: "app", "export_all_mods failed: {error}"),
             )?;
+            for exported in &mut result.mods {
+                export::show_removed_regional_files(&mut exported.result.files, &mods_root);
+            }
+            let regional_summary = regional_removal_summary(
+                result
+                    .mods
+                    .iter()
+                    .flat_map(|exported| exported.result.files.iter()),
+            );
             let skipped = result
                 .mods
                 .iter()
@@ -625,7 +713,7 @@ fn export_all_mods(
                     },
                     title: "All-mod export completed".to_string(),
                     summary: format!(
-                        "{} {} updated; {} translation {} updated, {} removed.",
+                        "{} {} updated; {} translation {} updated, {} removed.{regional_summary}",
                         result.mods_changed,
                         if result.mods_changed == 1 {
                             "mod"

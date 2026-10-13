@@ -274,6 +274,21 @@ function presentationFor(
             " fixed or accepted.",
           tone: "warning",
         });
+      // The game would read a regional file such as de-DE.json before the
+      // exported de.json, so the export removed it; say so in plain words.
+      for (const file of exportResult.files)
+        for (const regional of file.removedRegionalFiles ?? [])
+          notices.push({
+            text:
+              "Also removed " +
+              regional.shownPath +
+              (regional.backedUp
+                ? " (backed up as " + fileNameOf(regional.path) + ".bak)"
+                : "") +
+              ", because the game would prefer it over " +
+              fileNameOf(file.targetPath) +
+              ".",
+          });
       for (const skipped of exportResult.skipped)
         notices.push({
           text:

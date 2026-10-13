@@ -73,6 +73,68 @@ pub struct ExportFileResult {
     /// The target already held exactly this content, so it was left untouched
     /// and its existing backup was kept. Counts as written.
     pub unchanged: bool,
+    /// Regional files such as `de-DE.json` removed beside the target, because
+    /// SMAPI would read them before `de.json`.
+    pub removed_regional_files: Vec<RemovedRegionalFile>,
+}
+
+/// A regional locale file (`de-DE.json`, `pt-BR.json`, ...) that an export
+/// removed so the game reads the exported `<lang>.json` instead.
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovedRegionalFile {
+    pub path: String,
+    /// The same file relative to the Mods folder (`Mods/<Mod>/i18n/de-DE.json`)
+    /// for messages; filled in by [`show_removed_regional_files`].
+    pub shown_path: String,
+    /// A `<file>.bak` backup was made before removing it.
+    pub backed_up: bool,
+}
+
+impl RemovedRegionalFile {
+    /// One plain sentence for the Activity log, matching the result tray.
+    pub fn sentence(&self, target_path: &str) -> String {
+        let backup = if self.backed_up {
+            format!(" (backed up as {}.bak)", file_name_of(&self.path))
+        } else {
+            String::new()
+        };
+        format!(
+            "Also removed {}{backup}, because the game would prefer it over {}.",
+            self.shown_path,
+            file_name_of(target_path)
+        )
+    }
+}
+
+fn file_name_of(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// Name removed regional files relative to the Mods folder, so messages do not
+/// carry the user's folder layout.
+pub fn show_removed_regional_files(files: &mut [ExportFileResult], mods_root: &Path) {
+    let canonical_root = std::fs::canonicalize(mods_root).ok();
+    for removed in files
+        .iter_mut()
+        .flat_map(|file| file.removed_regional_files.iter_mut())
+    {
+        let path = Path::new(&removed.path);
+        // The file is gone, so canonicalize its folder to match a canonical root.
+        let canonical = path
+            .parent()
+            .and_then(|parent| std::fs::canonicalize(parent).ok())
+            .zip(path.file_name())
+            .map(|(parent, name)| parent.join(name));
+        removed.shown_path = match (&canonical_root, canonical) {
+            (Some(root), Some(canonical))
+                if !path.starts_with(mods_root) && canonical.starts_with(root) =>
+            {
+                shown_path(&canonical, root)
+            }
+            _ => shown_path(path, mods_root),
+        };
+    }
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -392,7 +454,7 @@ fn file_name_is(path: &Path, expected: &str) -> bool {
 
 /// A path relative to the Mods folder (or only its last three parts), so the
 /// message and the Activity log do not carry the user's folder layout.
-fn shown_path(path: &Path, mods_root: &Path) -> String {
+pub(crate) fn shown_path(path: &Path, mods_root: &Path) -> String {
     path.strip_prefix(mods_root)
         .map(|relative| format!("Mods/{}", relative.display()))
         .unwrap_or_else(|_| {
@@ -677,21 +739,31 @@ fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
                         .iter()
                         .filter(|path| path.as_path() != file.target_path)
                     {
-                        file.result.backed_up |= remove_target(obsolete)
-                            .map_err(|error| (error, file.target_path.clone()))?;
+                        let backed_up =
+                            remove_target(obsolete).map_err(|error| (error, obsolete.clone()))?;
+                        file.result.backed_up |= backed_up;
+                        file.result
+                            .removed_regional_files
+                            .push(removed_regional(obsolete, backed_up));
                     }
                     file.result.written = true;
                     prepared.result.files_written += 1;
                 } else {
                     for existing in &file.removals {
-                        file.result.backed_up |= remove_target(existing)
-                            .map_err(|error| (error, file.target_path.clone()))?;
+                        let backed_up =
+                            remove_target(existing).map_err(|error| (error, existing.clone()))?;
+                        file.result.backed_up |= backed_up;
+                        if existing != &file.target_path {
+                            file.result
+                                .removed_regional_files
+                                .push(removed_regional(existing, backed_up));
+                        }
                     }
                     if !file.removals.is_empty() {
-                        // With every translation cleared, removing the stale target
-                        // makes SMAPI fall back to default.json. The value may have
-                        // been imported from pt-BR.json or zh-CN.json, so remove the
-                        // read variant too.
+                        // With every translation cleared, removing the stale
+                        // target makes SMAPI fall back to default.json. The
+                        // value may have come from a regional file such as
+                        // pt-BR.json or de-DE.json, so remove that variant too.
                         file.result.removed = true;
                         prepared.result.files_removed += 1;
                     }
@@ -813,6 +885,15 @@ fn write_target(target_path: &Path, body: &str) -> Result<bool, String> {
     }
 
     Ok(backed_up)
+}
+
+fn removed_regional(path: &Path, backed_up: bool) -> RemovedRegionalFile {
+    let path = path.display().to_string();
+    RemovedRegionalFile {
+        shown_path: path.clone(),
+        path,
+        backed_up,
+    }
 }
 
 fn target_variants(target_path: &Path) -> Vec<PathBuf> {
@@ -2407,6 +2488,191 @@ mod tests {
         assert!(read(&i18n.join("zh.json.bak")).contains("Short old"));
         assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional first"));
         assert!(!i18n.join("zh-CN.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn german_and_spanish_regional_files_are_backed_up_and_removed() {
+        for (code, regional) in [("de", "de-DE.json"), ("es", "es-ES.json")] {
+            let root = crate::test_support::temp_dir(&format!("export-{code}-regional"));
+            let i18n = root.join("i18n");
+            write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+            write(&i18n.join(regional), r#"{"k":"Regional value"}"#);
+            write(&i18n.join("en-GB.json"), r#"{"k":"Unrelated"}"#);
+            let files = vec![ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join(format!("{code}.json")).display().to_string(),
+            }];
+
+            let mut result = export_mod(&root, "mod.id", &files).unwrap();
+            assert!(read(&i18n.join(format!("{code}.json"))).contains("Regional value"));
+            assert!(read(&i18n.join(format!("{regional}.bak"))).contains("Regional value"));
+            assert!(!i18n.join(regional).exists());
+            assert!(read(&i18n.join("en-GB.json")).contains("Unrelated"));
+            assert!(!i18n.join("en-GB.json.bak").exists());
+
+            show_removed_regional_files(&mut result.files, &root);
+            let removed = &result.files[0].removed_regional_files;
+            assert_eq!(removed.len(), 1);
+            assert_eq!(removed[0].path, i18n.join(regional).display().to_string());
+            assert_eq!(removed[0].shown_path, format!("Mods/i18n/{regional}"));
+            assert!(removed[0].backed_up);
+            assert_eq!(
+                removed[0].sentence(&result.files[0].target_path),
+                format!(
+                    "Also removed Mods/i18n/{regional} (backed up as {regional}.bak), \
+                     because the game would prefer it over {code}.json."
+                )
+            );
+            std::fs::remove_dir_all(root).ok();
+        }
+    }
+
+    #[test]
+    fn exports_without_a_regional_file_report_no_removal() {
+        let root = crate::test_support::temp_dir("export-no-regional");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("de.json"), r#"{"k":"Hallo"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        }];
+
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+        assert!(result.files[0].removed_regional_files.is_empty());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn upper_case_target_name_still_removes_the_regional_file() {
+        let root = crate::test_support::temp_dir("export-upper-case-target");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("de-DE.json"), r#"{"k":"Regional value"}"#);
+        assert_eq!(
+            scanner::regional_target_variant(&i18n.join("DE.json")),
+            Some(i18n.join("de-DE.json"))
+        );
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("DE.json").display().to_string(),
+        }];
+
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+        assert!(read(&i18n.join("DE.json")).contains("Regional value"));
+        assert!(!i18n.join("de-DE.json").exists());
+        assert!(read(&i18n.join("de-DE.json.bak")).contains("Regional value"));
+        assert_eq!(result.files[0].removed_regional_files.len(), 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn clearing_a_german_import_reports_the_removed_regional_file() {
+        let root = crate::test_support::temp_dir("export-clear-german-regional");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("de.json"), r#"{"k":"Hallo"}"#);
+        write(&i18n.join("de-DE.json"), r#"{"k":"Servus"}"#);
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: String::new(),
+                status: "untranslated".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        }];
+
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+        assert!(result.files[0].removed);
+        let removed = &result.files[0].removed_regional_files;
+        assert_eq!(removed.len(), 1, "the target itself is not a regional file");
+        assert_eq!(
+            removed[0].path,
+            i18n.join("de-DE.json").display().to_string()
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn export_all_reports_removed_regional_files_per_mod() {
+        let root = crate::test_support::temp_dir("export-all-regional");
+        let mods_root = root.join("Mods");
+        let first = mods_root.join("First/i18n");
+        let second = mods_root.join("Second/i18n");
+        write(&first.join("default.json"), r#"{"k":"First"}"#);
+        write(&first.join("de-DE.json"), r#"{"k":"Erste"}"#);
+        write(&second.join("default.json"), r#"{"k":"Second"}"#);
+        write(&second.join("de.json"), r#"{"k":"Zweite"}"#);
+        let mods = vec![
+            all_mod_input("first.id", "First", "i18n", &first),
+            all_mod_input("second.id", "Second", "i18n", &second),
+        ];
+
+        let mut result = export_all_mods(&root, &mods).unwrap();
+        for exported in &mut result.mods {
+            show_removed_regional_files(&mut exported.result.files, &mods_root);
+        }
+        let first_removed = &result.mods[0].result.files[0].removed_regional_files;
+        assert_eq!(first_removed.len(), 1);
+        assert_eq!(first_removed[0].shown_path, "Mods/First/i18n/de-DE.json");
+        assert!(first_removed[0].backed_up);
+        assert!(result.mods[1].result.files[0]
+            .removed_regional_files
+            .is_empty());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    /// Windows refuses to delete a file opened without delete sharing, so the
+    /// regional removal fails after `de.json` and both backups were written.
+    #[cfg(windows)]
+    #[test]
+    fn failed_regional_removal_rolls_back_target_variant_and_backups() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+
+        let root = crate::test_support::temp_dir("export-regional-rollback");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello","only":"Only"}"#);
+        write(&i18n.join("de.json"), r#"{"k":"Alt","only":"Nur"}"#);
+        write(&i18n.join("de.json.bak"), r#"{"k":"Older backup"}"#);
+        write(&i18n.join("de-DE.json"), r#"{"k":"Neu"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        }];
+
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(i18n.join("de-DE.json"))
+            .unwrap();
+        let error = export_mod(&root, "mod.id", &files).unwrap_err();
+        drop(lock);
+
+        assert!(error.contains("rolled back"), "{error}");
+        assert!(error.contains("Could not remove"), "{error}");
+        assert!(error.contains("de-DE.json"), "{error}");
+        assert_eq!(read(&i18n.join("de.json")), r#"{"k":"Alt","only":"Nur"}"#);
+        assert_eq!(read(&i18n.join("de.json.bak")), r#"{"k":"Older backup"}"#);
+        assert_eq!(read(&i18n.join("de-DE.json")), r#"{"k":"Neu"}"#);
+        assert!(!i18n.join("de-DE.json.bak").exists());
+        assert!(std::fs::read_dir(&i18n)
+            .unwrap()
+            .flatten()
+            .all(|entry| !entry.file_name().to_string_lossy().contains(".rollback-")));
         std::fs::remove_dir_all(root).ok();
     }
 

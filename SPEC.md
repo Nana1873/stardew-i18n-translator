@@ -194,11 +194,24 @@ mod) and keeps the last choice for the session. JSON export:
   visible `.json.bak` backups and atomic replacement. If a later write fails,
   restore earlier targets to their pre-export state.
 
-Flat Portuguese and Chinese imports prefer the regional filename
-(`i18n/pt-BR.json`, `i18n/zh-CN.json`); successful exports canonicalize to
-`i18n/pt.json` or `i18n/zh.json`, backing up and removing the regional file. Split document names are
-literal and do not trigger this language-filename migration. Existing targets, including
-omitted orphan keys, remain recoverable from their export backup.
+SMAPI looks up translations by the game's regional locale first (`de-DE`,
+`es-ES`, `pt-BR`, `zh-CN`, ...), then the language code. Flat imports for every
+game language read `i18n/<lang>-<REGION>.json` together with `i18n/<lang>.json`;
+file names match case-insensitively and the regional value wins per key. A
+broken canonical file is tolerated when reading, but JSON export still reads
+every variant strictly and stops on a broken one. Only the target language's
+own regional code counts, so `en-GB.json` is untouched. Successful JSON exports
+canonicalize to `i18n/<lang>.json`, back up and remove the regional file, and
+name it in the result tray and Activity log relative to the Mods folder.
+Translation ZIPs never contain a regional file and do not change or remove
+files in the Mods folder. When the original mod still has one, the ZIP preview
+shows one plain, non-blocking line per mod naming it relative to the Mods
+folder. It addresses the translator building the ZIP, since players who install
+it never see the app: tell players to delete that file after installing, for
+example on the mod page. Split
+document names are literal and do not trigger this language-filename
+migration. Existing targets, including omitted orphan keys, remain recoverable
+from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files for separate
 installation with Vortex or MO2. Each component's manifest folder name is its

@@ -127,6 +127,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Regional translation files such as `de-DE.json` or `es-ES.json` are read
+  together with `de.json` for every language, as already done for `pt-BR.json`
+  and `zh-CN.json`; the game prefers them over `de.json`. JSON exports back
+  them up and remove them, and the result and Activity log now name each
+  removed file, also for `pt-BR.json` and `zh-CN.json`. Translation ZIPs never
+  include or remove them; when the original mod has one, the ZIP preview names
+  it so the translator can tell players, for example on the mod page, to
+  delete it after installing the ZIP.
 - A mod folder the game never loads is no longer offered for translation or
   used as a glossary language pack. The game stops looking inside a folder
   once it holds any file other than readmes, text files, common images (such

@@ -80,6 +80,42 @@ describe("TranslationZipDialog", () => {
     expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeDisabled();
   });
 
+  it("shows regional file hints as plain information that blocks nothing", () => {
+    const hint =
+      "The original mod has its own Mods/Sample Pack/[CP] Sample/i18n/de-DE.json, which the game prefers over de.json. Tell players to delete it after installing this ZIP, for example on your mod page.";
+    const { rerender } = render(
+      <TranslationZipDialog
+        preview={{
+          ...PREVIEW,
+          versionConflicts: [],
+          warnings: [],
+          regionalFileHints: [hint],
+        }}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const shown = screen.getByText(hint);
+    expect(shown).toBeVisible();
+    expect(shown.closest(".is-warning, .is-error")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeEnabled();
+
+    rerender(
+      <TranslationZipDialog
+        preview={{ ...PREVIEW, versionConflicts: [], warnings: [] }}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/The original mod has its own/)).toBeNull();
+  });
+
   it("updates the safe filename when the package version is corrected", () => {
     const build = vi.fn();
     render(

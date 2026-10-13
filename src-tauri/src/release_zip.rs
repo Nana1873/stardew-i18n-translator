@@ -66,6 +66,10 @@ pub struct ZipPreview {
     /// Strings left out of the ZIP because of game-breaking token errors; the
     /// game shows their English source until they are fixed or accepted.
     pub problems: Vec<ZipProblem>,
+    /// One plain, non-blocking line per mod whose original folder in Mods
+    /// still has a regional file such as `i18n/de-DE.json`. The ZIP never
+    /// ships or removes it, but the game prefers it over the packaged file.
+    pub regional_file_hints: Vec<String>,
     pub total_strings: usize,
     pub total_source_strings: usize,
 }
@@ -403,6 +407,7 @@ fn prepare(
     let mut omitted_components = Vec::new();
     let mut warnings = Vec::new();
     let mut problems = Vec::new();
+    let mut regional_file_hints = Vec::new();
     let mut total_strings = 0;
     let mut total_source_strings = 0;
     // English sources read for this package, checked again before writing.
@@ -420,6 +425,7 @@ fn prepare(
         let install_folder = component_install_folder(component_root)?;
         let state = translations::load(config_dir, &component.unique_id)?;
         let mut component_entries = 0;
+        let mut regional = Vec::new();
         for file in &component.files {
             let output_unit = if let Some((root, _)) = file.relative_dir.split_once("/@split/") {
                 let target =
@@ -506,10 +512,12 @@ fn prepare(
                 preview: entry_preview,
                 body,
             });
+            regional.extend(original_regional_file(&file.target_path));
         }
         if component_entries == 0 {
             omitted_components.push(component.name.clone());
         }
+        regional_file_hints.extend(regional_file_hint(&regional, mods_path, &target_lang));
     }
 
     entries.sort_by(|left, right| left.preview.archive_path.cmp(&right.preview.archive_path));
@@ -531,6 +539,7 @@ fn prepare(
         omitted_components,
         warnings,
         problems,
+        regional_file_hints,
         total_strings,
         total_source_strings,
     };
@@ -668,7 +677,8 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             target_lang: language.clone(), target_language: language.clone(),
             entries: Vec::new(), omitted_components: Vec::new(),
             warnings: vec!["Includes current local translations across the scanned mods, with saved working translations taking priority. Untranslated and obsolete keys are omitted.".into()],
-            problems: Vec::new(), total_strings: 0, total_source_strings: 0,
+            problems: Vec::new(), regional_file_hints: Vec::new(),
+            total_strings: 0, total_source_strings: 0,
         },
         entries: Vec::new(), source_checks: Vec::new(), left_out: skipped.clone(),
     };
@@ -690,6 +700,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
         let component_root = Path::new(&component.folder_path);
         let install_folder = component_install_folder(component_root)?;
         let mut component_entries = 0;
+        let mut regional = Vec::new();
         for file in component.i18n_files {
             let input = ExportFileInput {
                 relative_dir: file.relative_dir.clone(),
@@ -781,10 +792,15 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 body: serialize_json(&output)?,
             });
             component_entries += 1;
+            regional.extend(original_regional_file(&file.target_path));
         }
         if component_entries == 0 {
             prepared.preview.omitted_components.push(component.name);
         }
+        prepared
+            .preview
+            .regional_file_hints
+            .extend(regional_file_hint(&regional, &mods, &language));
     }
     prepared
         .entries
@@ -795,6 +811,33 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
         .map(|entry| entry.preview.clone())
         .collect();
     Ok(prepared)
+}
+
+/// The regional file (`i18n/de-DE.json`) beside a packaged flat target in the
+/// original mod, if any. Split document names have none.
+fn original_regional_file(target_path: &str) -> Option<PathBuf> {
+    scanner::regional_target_variant(Path::new(target_path)).filter(|path| path.is_file())
+}
+
+/// One plain line for the translator who builds the ZIP: players who install
+/// it must delete the original mod's regional files, since the game reads
+/// them before `<lang>.json`. Players never see the app, so the translator
+/// has to pass this on.
+fn regional_file_hint(regional: &[PathBuf], mods_path: &Path, target_lang: &str) -> Option<String> {
+    let shown = regional
+        .iter()
+        .map(|path| crate::export::shown_path(path, mods_path))
+        .collect::<Vec<_>>();
+    let (last, rest) = shown.split_last()?;
+    let (names, pronoun) = if rest.is_empty() {
+        (last.clone(), "it")
+    } else {
+        (format!("{} and {last}", rest.join(", ")), "them")
+    };
+    Some(format!(
+        "The original mod has its own {names}, which the game prefers over {target_lang}.json. \
+         Tell players to delete {pronoun} after installing this ZIP, for example on your mod page."
+    ))
 }
 
 fn component_install_folder(component_root: &Path) -> Result<String, String> {
@@ -2014,6 +2057,115 @@ mod tests {
         assert_eq!(preview.total_source_strings, 2);
         assert_eq!(preview.entries[0].mod_version, "2.0");
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn package_zip_hints_at_original_regional_files_without_shipping_them() {
+        let root = crate::test_support::temp_dir("release-zip-regional-hint");
+        let mods = root.join("Mods");
+        let package = mods.join("Sample Pack");
+        let config = root.join("data");
+        let components = vec![
+            component(&package, "[CP] Sample", "sample.cp", "2.0"),
+            component(&package, "[JA] Sample", "sample.ja", "2.0"),
+        ];
+        save_translation(&config, "sample.cp", "Hallo {{name}}");
+        save_translation(&config, "sample.ja", "Guten Tag {{name}}");
+        let regional = package.join("[CP] Sample/i18n/de-DE.json");
+        write(&regional, r#"{"hello":"Servus {{name}}"}"#);
+        write(
+            &package.join("[JA] Sample/i18n/en-GB.json"),
+            r#"{"hello":"Hiya {{name}}"}"#,
+        );
+
+        let preview = preview(&config, &mods, "Sample Pack", "de", "German", &components).unwrap();
+        assert_eq!(
+            preview.regional_file_hints,
+            vec![
+                "The original mod has its own Mods/Sample Pack/[CP] Sample/i18n/de-DE.json, \
+                 which the game prefers over de.json. Tell players to delete it after \
+                 installing this ZIP, for example on your mod page."
+                    .to_string()
+            ]
+        );
+
+        let destination = root.join("translation.zip");
+        build(
+            &config,
+            &request(&mods, "Sample Pack", components, &destination, false),
+        )
+        .unwrap();
+        let documents = zip_documents(&destination);
+        assert!(documents.keys().all(|name| !name.contains("de-DE")));
+        assert_eq!(
+            documents["[CP] Sample/i18n/de.json"],
+            serde_json::json!({"hello":"Hallo {{name}}"})
+        );
+        assert!(
+            regional.is_file(),
+            "the ZIP never removes the original file"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn all_mod_zip_hints_at_original_regional_files_once_per_mod() {
+        let (root, config, mods) = output_fixture("output-regional-hint");
+        let component =
+            output_component(&mods, "Example", "Fixture.Example", r#"{"hello":"Hello"}"#);
+        output_component(&mods, "Plain", "Fixture.Plain", r#"{"hello":"Hello"}"#);
+        let regional = component.join("i18n/de-DE.json");
+        write(&regional, r#"{"hello":"Servus"}"#);
+        output_state(
+            &config,
+            "Fixture.Plain",
+            "i18n",
+            "hello",
+            "Hello",
+            "Hallo",
+            "translated",
+        );
+
+        let preview = preview_output(&config).unwrap();
+        assert_eq!(preview.regional_file_hints.len(), 1);
+        assert!(preview.regional_file_hints[0]
+            .starts_with("The original mod has its own Mods/Example/i18n/de-DE.json,"));
+        assert!(preview
+            .warnings
+            .iter()
+            .all(|warning| !warning.contains("de-DE")));
+
+        let destination = root.join("output.zip");
+        build_output(&config, &destination, false).unwrap();
+        let documents = zip_documents(&destination);
+        assert!(documents.keys().all(|name| !name.contains("de-DE")));
+        assert_eq!(
+            documents["Example/i18n/de.json"],
+            serde_json::json!({"hello":"Servus"})
+        );
+        assert!(regional.is_file());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn regional_hint_names_several_files_of_one_mod_in_one_line() {
+        let mods = Path::new("C:/Games/Stardew/Mods");
+        assert_eq!(regional_file_hint(&[], mods, "pt"), None);
+        let hint = regional_file_hint(
+            &[
+                mods.join("Pack/A/i18n/pt-BR.json"),
+                mods.join("Pack/B/i18n/pt-BR.json"),
+            ],
+            mods,
+            "pt",
+        )
+        .unwrap();
+        assert_eq!(
+            hint,
+            "The original mod has its own Mods/Pack/A/i18n/pt-BR.json and \
+             Mods/Pack/B/i18n/pt-BR.json, which the game prefers over pt.json. Tell \
+             players to delete them after installing this ZIP, for example on your mod page."
+        );
     }
 
     #[test]
