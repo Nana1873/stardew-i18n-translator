@@ -117,7 +117,7 @@ impl AiRuntimeState {
     /// already finished is not acknowledged.
     pub fn cancel_run(&self, run_id: &str) -> Result<bool, String> {
         let mut registry = self.active_run.lock().map_err(|_| {
-            "AI translation couldn't start. Restart the app and try again.".to_string()
+            "AI translation couldn't be cancelled. Restart the app to stop it.".to_string()
         })?;
         if let Some(active) = registry
             .active
@@ -144,7 +144,8 @@ impl RunLease<'_> {
     /// completed result.
     pub(crate) fn finish(mut self, outcome: AiRunOutcome) -> Result<AiRunOutcome, String> {
         let mut registry = self.state.active_run.lock().map_err(|_| {
-            "AI translation couldn't start. Restart the app and try again.".to_string()
+            "AI translation couldn't finish properly. Restart the app before the next run."
+                .to_string()
         })?;
         let Some(current) = registry
             .active
