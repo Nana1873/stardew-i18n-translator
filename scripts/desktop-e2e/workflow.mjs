@@ -291,9 +291,23 @@ async function chooseExport([scope, output]) {
           )
         ).length === 0,
     );
-    const option = await element(exportRadio(name));
-    if ((await option.getAttribute("aria-checked")) !== "true")
-      await click(exportRadio(name));
+    // The choices ignore clicks while a preview is prepared (aria-busy), and
+    // that can start just after the dialog opens. Click until the choice is
+    // checked, from a fresh lookup each time.
+    await waitFor(`export choice ${name}`, async () => {
+      try {
+        const option = await element(exportRadio(name));
+        if ((await option.getAttribute("aria-checked")) === "true") return true;
+        const busy = await driver.findElements(
+          css('[role="radiogroup"][aria-busy="true"]'),
+        );
+        if (busy.length === 0) await option.click();
+        return false;
+      } catch (error) {
+        if (error?.name === "StaleElementReferenceError") return false;
+        throw error;
+      }
+    });
   }
   await waitFor(
     "export preview ready",

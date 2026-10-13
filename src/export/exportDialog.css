@@ -109,6 +109,17 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* While a preview is prepared the choices ignore clicks; show that instead
+   of inviting a click that does nothing. */
+#stardew-i18n-translator .desktop-xd-seg[aria-busy="true"] button {
+  cursor: progress;
+}
+#stardew-i18n-translator
+  .desktop-xd-seg[aria-busy="true"]
+  button:not([aria-checked="true"]):hover {
+  color: var(--translator-muted);
+  background: transparent;
+}
 #stardew-i18n-translator .desktop-xd-seg button:focus-visible {
   outline: 2px solid var(--translator-brand);
   outline-offset: -2px;

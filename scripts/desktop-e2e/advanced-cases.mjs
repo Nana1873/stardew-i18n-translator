@@ -194,9 +194,16 @@ export async function advancedCases(h) {
               );
               assert.ok(tool.right + 6 <= saves[0].left);
             }
-            assert.ok(Math.abs(saves[0].left - saves[1].left) < 1);
-            assert.ok(Math.abs(saves[0].width - saves[1].width) < 1);
-            assert.ok(saves[0].bottom + 5 <= saves[1].top);
+            assert.ok(
+              Math.abs(
+                saves[0].y +
+                  saves[0].height / 2 -
+                  saves[1].y -
+                  saves[1].height / 2,
+              ) < 1,
+              `${name}: Save and Save & next must stay on one aligned row`,
+            );
+            assert.ok(saves[0].right + 4 <= saves[1].left);
           }
           await screenshot(`layout-${scale}-${name}`);
           return result;
@@ -271,7 +278,7 @@ export async function advancedCases(h) {
             await element(translation)
           ).getAttribute("value");
           await fill(translation, `${original} Edited.`);
-          await element(button("Save edited suggestion"));
+          await element(button("Save edit"));
           await measure("editor-review-edited", [
             ".translator-editor-actions button",
           ]);

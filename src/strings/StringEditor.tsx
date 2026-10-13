@@ -910,7 +910,7 @@ export function StringEditor({
   let saveLabel = "Save";
   let saveNextLabel = atQueueEnd ? "Save & close" : "Save & next";
   if (shownStatus === "review-needed") {
-    saveLabel = textEdited ? "Save edited suggestion" : "Approve suggestion";
+    saveLabel = textEdited ? "Save edit" : "Approve suggestion";
     saveNextLabel = textEdited
       ? atQueueEnd
         ? "Save edit & close"
@@ -1521,7 +1521,15 @@ export function StringEditor({
               disabled={saving || translating || sourceSaveBlocked}
               title={`${saveLabel} (${displayShortcut(shortcuts["editor.save"])})`}
             >
-              {saveLabel} <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
+              {saveLabel}
+              {/* Review and update labels are long; their shortcut stays in
+                  the tooltip so the editor tools keep one row. */}
+              {saveLabel === "Save" && (
+                <>
+                  {" "}
+                  <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
+                </>
+              )}
             </button>
             <button
               type="button"
