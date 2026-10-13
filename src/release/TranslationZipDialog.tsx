@@ -1,9 +1,16 @@
-import { useEffect } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { ZipSummary, ZipSourcePath, remainingZipWarnings } from "./ZipDetails";
-import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
-import { LeftOutStrings } from "../export/ExportOverview";
+import { AlertTriangle } from "lucide-react";
+import {
+  ExportDialogHead,
+  ExportSection,
+  LeftOutStrings,
+} from "../export/ExportOverview";
 import { useDialogAccessibility } from "../dialogAccessibility";
+import {
+  EXPORT_CHOOSER_FOCUS,
+  useStickyExportHeight,
+} from "../export/ExportChooser";
 import type {
   ZipPreview,
   ZipProblem,
@@ -20,7 +27,6 @@ function safeFileName(value: string): string {
 export function TranslationZipDialog({
   preview,
   combined = false,
-  componentCount,
   untranslated = null,
   modFolders = [],
   modsPath,
@@ -29,10 +35,13 @@ export function TranslationZipDialog({
   onInspect,
   onBuild,
   onClose,
+  chooser,
+  switching = false,
+  subject,
+  targetLanguage,
 }: {
   preview: ZipPreview | null;
   combined?: boolean;
-  componentCount: number | null;
   /** Strings with no translation yet, counted like the JSON export. */
   untranslated?: number | null;
   modFolders?: ReadonlyArray<{ uniqueId: string; folderPath: string }>;
@@ -42,6 +51,15 @@ export function TranslationZipDialog({
   onInspect: (problem: ZipProblem) => void;
   onBuild: (fileName: string, installFolders: ZipInstallFolder[]) => void;
   onClose: () => void;
+  /** The Export… choice shown above the preview. */
+  chooser?: ReactNode;
+  /** True while another Export… choice loads: this preview is stale and
+   * its actions wait. */
+  switching?: boolean;
+  /** Subtitle before the preview is ready. */
+  subject?: string;
+  /** "German (de)"; shown before the preview is ready. */
+  targetLanguage?: string;
 }) {
   const [version, setVersion] = useState(preview?.selectedVersion ?? "");
   const [versionConfirmed, setVersionConfirmed] = useState(false);
@@ -97,25 +115,36 @@ export function TranslationZipDialog({
   const empty = preview?.entries.length === 0;
   const hasVersionConflicts =
     !combined && Boolean(preview?.versionConflicts.length);
-  const title = "Export translation ZIP";
   const versionReady = !hasVersionConflicts || versionConfirmed;
+  // Building, or a stale preview while another Export… choice loads.
+  const locked = building || switching;
 
   const zipName = combined
-    ? "All mods"
-    : (components[0]?.modName ?? preview?.packageName);
+    ? preview
+      ? `${components.length} ${components.length === 1 ? "mod" : "mods"}`
+      : (subject ?? "All mods")
+    : (components[0]?.modName ?? preview?.packageName ?? subject);
+  const language = preview
+    ? `${preview.targetLanguage} (${preview.targetLang})`
+    : targetLanguage;
   const displayedZipWarnings = remainingZipWarnings(preview);
   const dialogRef = useRef<HTMLElement>(null);
+  useStickyExportHeight(dialogRef, Boolean(chooser));
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
     onEscape: onClose,
     escapeDisabled: building,
+    initialFocusSelector: chooser ? EXPORT_CHOOSER_FOCUS : undefined,
   });
+  // Settings open by themselves only when something there needs attention.
+  const settingsNeedAttention =
+    hasVersionConflicts || Boolean(folderError) || (!combined && !version);
 
   return (
     <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className={"translator-flow-dialog desktop-zip-dialog"}
+        className="translator-flow-dialog desktop-xd"
         role="dialog"
         aria-modal="true"
         aria-busy={building}
@@ -123,84 +152,46 @@ export function TranslationZipDialog({
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
-        <div className="translator-flow-head">
-          <div>
-            <h2 className="translator-heading" id="translator-zip-title">
-              {title}
-            </h2>
-            <div className="translator-kicker">
-              {
-                <>
-                  <span>{zipName ?? "Preparing ZIP"}</span>
-                  {preview && (
-                    <span className="desktop-zip-language">
-                      {preview.targetLanguage} ({preview.targetLang})
-                    </span>
-                  )}
-                </>
-              }
-            </div>
-          </div>
-          <button
-            className="translator-icon-button"
-            type="button"
-            aria-label="Close ZIP preview"
-            onClick={onClose}
-            disabled={building}
-          >
-            <X aria-hidden="true" />
-          </button>
-        </div>
+        <ExportDialogHead
+          titleId="translator-zip-title"
+          subject={zipName ?? "Preparing ZIP"}
+          language={language}
+          closeLabel="Close ZIP preview"
+          closeDisabled={building}
+          onClose={onClose}
+        />
+        {chooser}
 
-        <div className="translator-flow-body">
+        <div className="desktop-xd-body" aria-busy={switching || undefined}>
           {error && (
-            <div className="translator-flow-callout is-error" role="alert">
+            <div className="desktop-xd-alert is-error" role="alert">
               <strong>Could not prepare ZIP:</strong> {error}
             </div>
           )}
-          {!preview && !error && <p>Preparing the package…</p>}
+          {!preview && !error && (
+            <p className="desktop-xd-loading">Preparing the package…</p>
+          )}
           {preview && (
             <>
-              <ZipSummary preview={preview} untranslated={untranslated} />
+              <ZipSummary
+                preview={preview}
+                untranslated={untranslated}
+                leftOut={preview.problems.length}
+              />
               <LeftOutStrings
                 problems={preview.problems}
                 target="ZIP"
                 showModNames={combined}
                 onInspect={onInspect}
-                disabled={building}
+                disabled={locked}
               />
-              <div className="translator-flow-fields">
-                {!combined && (
-                  <label className="translator-flow-field">
-                    {"Version"}
-                    <input
-                      value={version}
-                      disabled={building}
-                      onChange={(event) => {
-                        setVersion(event.target.value);
-                        setVersionConfirmed(false);
-                      }}
-                    />
-                  </label>
-                )}
-                {
-                  <div className="translator-flow-field desktop-zip-filename">
-                    <span>ZIP file</span>
-                    <output title={fileName} aria-label="ZIP file">
-                      {fileName}
-                    </output>
-                  </div>
-                }
-              </div>
-
-              {false}
 
               {hasVersionConflicts && (
-                <label className="translator-flow-callout is-warning translator-confirm-line">
+                <label className="desktop-xd-alert is-warning desktop-xd-confirm">
                   <input
                     type="checkbox"
                     checked={versionConfirmed}
-                    disabled={building}
+                    disabled={locked}
                     onChange={(event) =>
                       setVersionConfirmed(event.target.checked)
                     }
@@ -215,127 +206,13 @@ export function TranslationZipDialog({
                   </span>
                 </label>
               )}
-
-              {
-                <div className="translator-flow-fields">
-                  {components.map((entry) => (
-                    <div key={entry.modUniqueId} className="desktop-zip-folder">
-                      <label className="translator-flow-field">
-                        {components.length === 1
-                          ? "Install folder"
-                          : entry.modName}
-                        <input
-                          aria-describedby={`zip-source-${entry.modUniqueId}`}
-                          value={
-                            folderEdits.get(entry.modUniqueId) ??
-                            entry.installFolder
-                          }
-                          disabled={building}
-                          onChange={(event) =>
-                            setFolderEdits((current) =>
-                              new Map(current).set(
-                                entry.modUniqueId,
-                                event.target.value,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <ZipSourcePath
-                        descriptionId={`zip-source-${entry.modUniqueId}`}
-                        path={
-                          modFolders.find(
-                            (mod) => mod.uniqueId === entry.modUniqueId,
-                          )?.folderPath
-                        }
-                        modsPath={modsPath}
-                        installFolder={entry.installFolder}
-                      />
-                    </div>
-                  ))}
-                </div>
-              }
               {folderError && (
-                <div className="translator-flow-callout is-error" role="alert">
+                <div className="desktop-xd-alert is-error" role="alert">
                   {folderError}
                 </div>
               )}
-
-              {
-                <details className="desktop-zip-details">
-                  <summary>
-                    Details{" "}
-                    <span>
-                      {preview.entries.length}{" "}
-                      {preview.entries.length === 1 ? "file" : "files"}
-                    </span>
-                  </summary>
-                  <div className="desktop-zip-files">
-                    <div>
-                      <strong>
-                        Files after installation (relative to Mods)
-                      </strong>
-                      {preview.entries.length > 0 ? (
-                        <ul className="translator-flow-list">
-                          {preview.entries.map((entry) => (
-                            <li
-                              key={`${entry.modUniqueId}:${entry.archivePath}`}
-                            >
-                              <code>
-                                {folderFor(
-                                  entry.modUniqueId,
-                                  entry.installFolder,
-                                )}
-                                /
-                                {entry.archivePath.slice(
-                                  entry.installFolder.length + 1,
-                                )}
-                              </code>
-                              <span>
-                                {entry.strings}{" "}
-                                {entry.strings === 1 ? "string" : "strings"}
-                                {entry.outdated > 0
-                                  ? ` · ${entry.outdated} changed`
-                                  : ""}
-                                {entry.reviewNeeded > 0
-                                  ? ` · ${entry.reviewNeeded} to review`
-                                  : ""}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="translator-flow-callout">
-                          No translated files are ready to package.
-                        </div>
-                      )}
-                    </div>
-                    {!combined && (
-                      <p className="translator-kicker">
-                        Version from {preview.versionSource}.
-                      </p>
-                    )}
-                  </div>
-                </details>
-              }
-
-              {preview.omittedComponents.length > 0 && (
-                <p className="translator-kicker">
-                  Omitted without translated output:{" "}
-                  {preview.omittedComponents.join(", ")}.
-                </p>
-              )}
-
-              {(preview.regionalFileHints?.length ?? 0) > 0 && (
-                <div className="translator-flow-callout translator-zip-regional-hints">
-                  {preview.regionalFileHints?.map((hint) => (
-                    <p key={hint}>{hint}</p>
-                  ))}
-                </div>
-              )}
-
               {displayedZipWarnings.length > 0 && (
-                <div className="translator-flow-callout is-warning translator-zip-warnings">
+                <div className="desktop-xd-alert is-warning">
                   <AlertTriangle aria-hidden="true" />
                   {displayedZipWarnings.length === 1 ? (
                     <p>{displayedZipWarnings[0]}</p>
@@ -348,11 +225,135 @@ export function TranslationZipDialog({
                   )}
                 </div>
               )}
+              {(preview.regionalFileHints?.length ?? 0) > 0 && (
+                <div className="desktop-xd-alert is-info">
+                  {preview.regionalFileHints?.map((hint) => (
+                    <p key={hint}>{hint}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="desktop-xd-sections">
+                <ExportSection
+                  title="ZIP settings"
+                  summary={fileName}
+                  openWhen={settingsNeedAttention}
+                >
+                  <div className="desktop-xd-rows">
+                    {!combined && (
+                      <label className="desktop-xd-row">
+                        <span>Version</span>
+                        <input
+                          value={version}
+                          disabled={locked}
+                          onChange={(event) => {
+                            setVersion(event.target.value);
+                            setVersionConfirmed(false);
+                          }}
+                        />
+                      </label>
+                    )}
+                    <div className="desktop-xd-row">
+                      <span>ZIP file</span>
+                      <output title={fileName} aria-label="ZIP file">
+                        {fileName}
+                      </output>
+                    </div>
+                    {components.map((entry) => (
+                      <div key={entry.modUniqueId} className="desktop-xd-row">
+                        <label
+                          htmlFor={`zip-folder-${entry.modUniqueId}`}
+                          title={entry.modName}
+                        >
+                          {components.length === 1
+                            ? "Install folder"
+                            : entry.modName}
+                        </label>
+                        <div>
+                          <input
+                            id={`zip-folder-${entry.modUniqueId}`}
+                            aria-describedby={`zip-source-${entry.modUniqueId}`}
+                            value={
+                              folderEdits.get(entry.modUniqueId) ??
+                              entry.installFolder
+                            }
+                            disabled={locked}
+                            onChange={(event) =>
+                              setFolderEdits((current) =>
+                                new Map(current).set(
+                                  entry.modUniqueId,
+                                  event.target.value,
+                                ),
+                              )
+                            }
+                          />
+                          <ZipSourcePath
+                            descriptionId={`zip-source-${entry.modUniqueId}`}
+                            path={
+                              modFolders.find(
+                                (mod) => mod.uniqueId === entry.modUniqueId,
+                              )?.folderPath
+                            }
+                            modsPath={modsPath}
+                            installFolder={entry.installFolder}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ExportSection>
+
+                <ExportSection
+                  title="Details"
+                  summary={`${preview.entries.length} ${preview.entries.length === 1 ? "file" : "files"}`}
+                >
+                  <div className="desktop-xd-details">
+                    <strong>Files after installation (relative to Mods)</strong>
+                    {preview.entries.length > 0 ? (
+                      <ul>
+                        {preview.entries.map((entry) => (
+                          <li key={`${entry.modUniqueId}:${entry.archivePath}`}>
+                            <code>
+                              {folderFor(
+                                entry.modUniqueId,
+                                entry.installFolder,
+                              )}
+                              /
+                              {entry.archivePath.slice(
+                                entry.installFolder.length + 1,
+                              )}
+                            </code>
+                            <span>
+                              {entry.strings}{" "}
+                              {entry.strings === 1 ? "string" : "strings"}
+                              {entry.outdated > 0
+                                ? ` · ${entry.outdated} changed`
+                                : ""}
+                              {entry.reviewNeeded > 0
+                                ? ` · ${entry.reviewNeeded} to review`
+                                : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>No translated files are ready to package.</p>
+                    )}
+                    {!combined && <p>Version from {preview.versionSource}.</p>}
+                    {preview.omittedComponents.length > 0 && (
+                      <p>
+                        Omitted without translated output:{" "}
+                        {preview.omittedComponents.join(", ")}.
+                      </p>
+                    )}
+                  </div>
+                </ExportSection>
+              </div>
             </>
           )}
         </div>
 
-        <div className="translator-flow-foot">
+        <div className="desktop-xd-foot">
           <button
             className="translator-button translator-button-quiet"
             type="button"
@@ -368,7 +369,7 @@ export function TranslationZipDialog({
               !preview ||
               blocked ||
               empty ||
-              building ||
+              locked ||
               (!combined && !version.trim()) ||
               !versionReady
             }
@@ -385,7 +386,7 @@ export function TranslationZipDialog({
               )
             }
           >
-            {building ? "Exporting…" : "Save ZIP…"}
+            {building ? "Exporting…" : switching ? "Checking…" : "Save ZIP…"}
           </button>
         </div>
       </section>

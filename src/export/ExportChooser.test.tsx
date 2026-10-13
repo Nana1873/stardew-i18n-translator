@@ -1,0 +1,101 @@
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { vi } from "vitest";
+import { ExportChooser, type ExportChoice } from "./ExportChooser";
+
+function show(
+  choice: ExportChoice,
+  options: { modAvailable?: boolean; busy?: boolean } = {},
+) {
+  const onChange = vi.fn();
+  render(
+    <ExportChooser
+      choice={choice}
+      modAvailable={options.modAvailable ?? true}
+      busy={options.busy}
+      onChange={onChange}
+    />,
+  );
+  return onChange;
+}
+
+describe("Export choice", () => {
+  it("asks for the mods and the output as two labelled radio groups", () => {
+    show({ scope: "mod", output: "zip" });
+    const mods = screen.getByRole("radiogroup", { name: "Mods" });
+    const output = screen.getByRole("radiogroup", { name: "Output" });
+    expect(within(mods).getByRole("radio", { name: "This mod" })).toBeChecked();
+    expect(
+      within(mods).getByRole("radio", { name: "All mods" }),
+    ).not.toBeChecked();
+    expect(within(output).getByRole("radio", { name: "ZIP" })).toBeChecked();
+    expect(
+      within(output).getByRole("radio", { name: "JSON" }),
+    ).not.toBeChecked();
+    // Only the checked option of each group is in the Tab order.
+    expect(screen.getByRole("radio", { name: "This mod" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(screen.getByRole("radio", { name: "All mods" })).toHaveAttribute(
+      "tabindex",
+      "-1",
+    );
+    expect(
+      screen.getByText(
+        "Saves one installable ZIP for this mod — for MO2, Vortex or a Nexus Mods upload.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("names all mods without repeating mod names, and leaves JSON to its preview", () => {
+    const { unmount } = render(
+      <ExportChooser
+        choice={{ scope: "all", output: "zip" }}
+        modAvailable
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Saves one combined ZIP for all mods — for MO2, Vortex or a Nexus Mods upload.",
+      ),
+    ).toBeVisible();
+    unmount();
+    show({ scope: "all", output: "json" });
+    expect(screen.queryByText(/Saves one/)).toBeNull();
+  });
+
+  it("switches by click and by arrow keys", () => {
+    const onChange = show({ scope: "mod", output: "zip" });
+    fireEvent.click(screen.getByRole("radio", { name: "JSON" }));
+    expect(onChange).toHaveBeenLastCalledWith({ scope: "mod", output: "json" });
+    fireEvent.keyDown(screen.getByRole("radio", { name: "This mod" }), {
+      key: "ArrowRight",
+    });
+    expect(onChange).toHaveBeenLastCalledWith({ scope: "all", output: "zip" });
+    // Choosing the checked option again does nothing.
+    onChange.mockClear();
+    fireEvent.click(screen.getByRole("radio", { name: "ZIP" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("offers only All mods when no mod is selected", () => {
+    const onChange = show(
+      { scope: "all", output: "zip" },
+      { modAvailable: false },
+    );
+    expect(screen.getByRole("radio", { name: "This mod" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("radio", { name: "All mods" }), {
+      key: "ArrowLeft",
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("waits while a preview loads", () => {
+    const onChange = show({ scope: "mod", output: "zip" }, { busy: true });
+    for (const group of screen.getAllByRole("radiogroup"))
+      expect(group).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(screen.getByRole("radio", { name: "JSON" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
