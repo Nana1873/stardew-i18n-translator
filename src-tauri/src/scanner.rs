@@ -2228,6 +2228,31 @@ mod tests {
     }
 
     #[test]
+    fn spanish_regional_file_alone_counts_as_an_existing_target() {
+        let root = crate::test_support::temp_dir("scan-spanish-regional-only");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"k\": \"Hello\", \"other\": \"World\" }",
+        );
+        let regional = mod_dir.join("i18n").join("es-ES.json");
+        write(&regional, "{ \"k\": \"Hola\" }");
+
+        let result = scan_mods(&root, "es", &root);
+        let file = &result.mods[0].i18n_files[0];
+        assert!(file.target_exists);
+        assert!(file.target_path.ends_with("es.json"));
+        assert_eq!(target_read_path(Path::new(&file.target_path)), regional);
+        assert_eq!(result.mods[0].translated_keys, 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn canonical_and_regional_targets_merge_per_key() {
         // SMAPI reads pt-BR.json, then pt.json, per key. A key only pt.json
         // has must stay translated instead of reading as Open.
