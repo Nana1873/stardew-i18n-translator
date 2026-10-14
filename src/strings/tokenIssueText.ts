@@ -274,6 +274,8 @@ export function tokenConsequence(
     return missing
       ? "Only the a/an article is lost. Fine if intended."
       : "The game puts no article here in other languages. Fine if intended.";
+  if (isLetterFormat(token) && severity === "error")
+    return "The game does not recognize this command, so it shows as text in the letter. Write the command word in lowercase and the background as a number, like in the English text.";
   if (isLetterFormat(token))
     return missing
       ? "The letter uses its default background or text color. Fine if intended."

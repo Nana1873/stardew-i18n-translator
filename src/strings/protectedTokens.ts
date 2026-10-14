@@ -262,7 +262,8 @@ function actsInLetter(token: string): boolean {
     token === "${" ||
     token === "}$" ||
     isPlaceholder(token) ||
-    isEmptyBracket(token)
+    isEmptyBracket(token) ||
+    isLetterFormat(token)
   );
 }
 
@@ -314,7 +315,9 @@ export function tokenSeverity(
     token === "||" ||
     // An empty `[]` already fails in the English text.
     (dropped && isEmptyBracket(token)) ||
-    isLetterFormat(token) ||
+    // A letter command the game does not recognize stays visible.
+    (isLetterFormat(token) &&
+      (dropped || sourceCount > 0 || letterFormatWorks(token))) ||
     // A missing value token only drops its value. A new one that is not in
     // the English text may not resolve and then shows as raw text.
     (isTextBracket(token) &&
@@ -421,6 +424,19 @@ export function isTextBracket(token: string): boolean {
 export function isLetterFormat(token: string): boolean {
   const lower = token.toLowerCase();
   return lower.startsWith("[letterbg ") || lower.startsWith("[textcolor ");
+}
+
+/** Whether the game applies (and removes) the letter command: it compares
+ * the command word case-sensitively and parses the background as a number.
+ * Mirrors Rust `letter_format_works`. */
+function letterFormatWorks(token: string): boolean {
+  const words = token
+    .replace(/^\[+|\]+$/g, "")
+    .split(" ")
+    .filter(Boolean);
+  if (words[0] === "textcolor") return true;
+  if (words[0] === "letterbg") return isAsciiDigits(words[words.length - 1]);
+  return false;
 }
 
 const ALWAYS_RESOLVING_TOKENS = new Set([

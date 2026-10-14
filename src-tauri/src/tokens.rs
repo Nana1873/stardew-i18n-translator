@@ -603,6 +603,19 @@ fn is_letter_format(token: &str) -> bool {
     lower.starts_with("[letterbg ") || lower.starts_with("[textcolor ")
 }
 
+/// Whether the game applies (and removes) the letter command: it compares
+/// the command word case-sensitively and parses the background as a number.
+/// Mirrors TS `letterFormatWorks`.
+fn letter_format_works(token: &str) -> bool {
+    let body = token.trim_start_matches('[').trim_end_matches(']');
+    let words: Vec<&str> = body.split(' ').filter(|word| !word.is_empty()).collect();
+    match words.first() {
+        Some(&"textcolor") => true,
+        Some(&"letterbg") => words.last().is_some_and(|last| is_ascii_digits(last)),
+        _ => false,
+    }
+}
+
 /// Bracket tokens `TokenParser` always resolves: built-in values without
 /// arguments, and `[ArticleFor …]`, which is empty in other languages. Any
 /// other new bracket token may not resolve, and then it is left as raw text.
@@ -834,6 +847,9 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
             "The game puts no article here in other languages. Fine if intended."
         };
     }
+    if is_letter_format(token) && difference.is_error() {
+        return "The game does not recognize this command, so it shows as text in the letter. Write the command word in lowercase and the background as a number, like in the English text.";
+    }
     if is_letter_format(token) {
         return if missing {
             "The letter uses its default background or text color. Fine if intended."
@@ -978,6 +994,7 @@ fn acts_in_letter(token: &str) -> bool {
         || matches!(token, "${" | "}$")
         || is_placeholder(token)
         || is_empty_bracket(token)
+        || is_letter_format(token)
 }
 
 fn token_severity(
@@ -1026,7 +1043,9 @@ fn token_severity(
         || token == "||"
         // An empty `[]` already fails in the English text.
         || (dropped && is_empty_bracket(token))
-        || is_letter_format(token)
+        // A letter command the game does not recognize stays visible.
+        || (is_letter_format(token)
+            && (dropped || source_count > 0 || letter_format_works(token)))
         // A missing value token only drops its value. A new one that is not
         // in the English text may not resolve and then shows as raw text.
         || (is_text_bracket(token)

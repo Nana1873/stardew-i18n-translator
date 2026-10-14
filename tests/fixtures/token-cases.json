@@ -1081,6 +1081,18 @@
       "source": "[textcolor blue]Hello",
       "target": "Hallo",
       "blocked": false
+    },
+    {
+      "name": "a letter command in the wrong case blocks",
+      "source": "[textcolor red]Dear @,^Hi[#]T",
+      "target": "[TextColor red]Liebe @,^Hallo[#]T",
+      "blocked": true
+    },
+    {
+      "name": "a letter background that is no number blocks",
+      "source": "[letterbg 2]Dear @,^Hi[#]T",
+      "target": "[letterbg zwei]Liebe @,^Hallo[#]T",
+      "blocked": true
     }
   ],
   "explanations": [

@@ -143,8 +143,10 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   flag `$1 metHarvey#`), the `_` separators inside a `$y '…'` quick response,
   a single `}` and an added single `{`, mail `%item`/`%action ... %%` (spacing
   and the item type's case are ignored), item brackets such as `[128]` that
-  give an item in dialogue, an empty `[]`, a bracket token whose name or key,
-  name, or item ID argument is not in the English text (such as a
+  give an item in dialogue, an empty `[]`, a letter command the game does not
+  recognize (`[TextColor …]`, `[letterbg zwei]`), a bracket token whose name
+  and first argument (a text key, character name, or item ID) are not in the
+  English text (such as a
   `[LocalizedText …]` or `[CharacterName …]` whose key or name was translated,
   which the game shows as raw text; translated text arguments of tokens such as
   `[GenderedText …]` or an `[ItemName …]` fallback are fine), renamed or added
