@@ -790,7 +790,7 @@ try {
     assert.equal(await exists(statePath), false);
     await writeFile(
       exported,
-      JSON.stringify({ greeting: "Missing protected tokens" }),
+      JSON.stringify({ greeting: "Missing protected tokens}" }),
     );
     const rescan = async () => {
       await click(css('[aria-label="Scan mods"]'));
@@ -919,7 +919,7 @@ try {
     await absent(button("Export and replace"));
     assert.deepEqual(
       await json(exported),
-      { greeting: "Missing protected tokens" },
+      { greeting: "Missing protected tokens}" },
       "Saving acceptance must not export.",
     );
     // Restore only the files introduced by this synthetic case before the
@@ -1146,7 +1146,7 @@ try {
     await openEntry("greeting");
     await fill(
       css("#translator-editor-translation"),
-      "Missing protected tokens",
+      "Missing protected tokens}",
     );
     await click(button("Save"));
     await element(

@@ -133,13 +133,18 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
 **warning**, verified against the Stardew 1.6 dialogue, mail, and token parsers:
 
 - Errors break the game: a damaged gender switch (`${` or `}$` missing, or a
-  switch inside a switch, which the game does not nest), a changed `#$b#`
-  page structure, dialogue commands such as `$q`,
-  `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
-  `%revealtaste`, the arguments of a command that opens the string (such as
-  `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), the `_` separators
-  and single `*` page breaks inside a `$y '…'` quick response, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
-  item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
+  switch inside a switch, which the game does not nest), a `#$b#` replaced by
+  a bare `#` (the conversation ends there), any page change (`#`, `#$b#`,
+  `#$e#`, `#$k#`) in a string with `$1`, `$c`, or `$d`, which count pages, a
+  changed `|` in a `$d` dialogue, dialogue
+  commands such as `$q`, `$r`, `$y`, `$p`, `$d`, `$c`, an inline `$k`,
+  `$action`, event commands `%fork` and `%revealtaste`, the arguments of a
+  command that opens the string (such as `$q 305/306 null#` or the one-time
+  flag `$1 metHarvey#`), the `_` separators inside a `$y '…'` quick response,
+  a single `}` and an added single `{`, mail `%item`/`%action ... %%` (spacing
+  and the item type's case are ignored), item brackets such as `[128]` that
+  give an item in dialogue, an empty `[]`, renamed or added
+  `{{placeholders}}`, a `{n}` above the highest index in the English text, and
   a second, different portrait command on one dialogue page for either player
   gender (the game removes every copy of the one it applies, so a repeated
   portrait is harmless; a bare `^` also splits a page into a male and a female
@@ -151,11 +156,19 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   `%farm`, `%favorite`, `%year`, `%kid1`, `%kid2`, `%season`, and `%noturn`
   (missing, added, or renamed; the game replaces only the exact lowercase
   name, so `%Spouse` stays text, and a percent sign such as `50%` is never
-  one), a dropped placeholder or `[ArticleFor]`, and a changed
-  bare `^` or `#` that does not put two different portraits on one page or
-  detach a `$y` quick response. Those two split pages and genders in dialogue but are plain
-  text in letters (`^` is a line break) and UI strings, and the app cannot tell
-  these apart reliably, so the translator decides.
+  one), a dropped placeholder, a repeated `{n}`, value tokens such as
+  `[FarmName]`, `[ItemName …]`, or `[ArticleFor …]` (missing, added, or
+  renamed; an unknown one stays visible as text), a dropped or added `#$b#`
+  (the game moves long text into extra boxes itself), a `*` in a `$y` reply,
+  `#$e#` and a `#$k#` page (the game skips both), a changed `||` weekly split, a dropped single `{`, and a
+  changed bare `^` or `#` that does not put two different portraits on one
+  page or detach a `$y` quick response. Those two split pages and genders in
+  dialogue but are plain text in letters (`^` is a line break) and UI strings,
+  and the app cannot tell these apart reliably, so the translator decides.
+- Letters (an English text with one `[#]`) are compared as the game shows
+  them: only the text before the first `[#]`, per player gender. A missing or
+  extra `[#]` and dialogue syntax there are warnings; `%item`, `%action`,
+  gender switches, and placeholders keep their rules.
 
 Warnings never block. An unaccepted error leaves only that string out of direct
 export and ZIP creation, so SMAPI shows its English source; every other value is

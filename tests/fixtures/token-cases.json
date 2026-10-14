@@ -339,10 +339,10 @@
       "blocked": false
     },
     {
-      "name": "an item token beyond the dropped ArticleFor is still added",
+      "name": "a value token beyond the dropped ArticleFor is a note",
       "source": "Bring [ArticleFor [SuggestedItem]].",
       "target": "Bring [SuggestedItem] [SuggestedItem].",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "placeholder names compare trimmed and case-insensitively",
@@ -634,8 +634,8 @@
     },
     {
       "name": "damage inside one branch of a kept switch still blocks",
-      "source": "${He is#$b#here.^She is#$b#here.}$",
-      "target": "${Er ist hier.^Sie ist#$b#hier.}$",
+      "source": "${He has it.[128]^She has it.[128]}$",
+      "target": "${Er hat es.^Sie hat es.[128]}$",
       "blocked": true
     },
     {
@@ -676,8 +676,8 @@
     },
     {
       "name": "a partially collapsed switch still compares sums",
-      "source": "${Mr.^Ms.}$ X ${Hi#$b#^Hello#$b#}$ Y",
-      "target": "${Herr^Frau}$ X Hallo#$b# Y",
+      "source": "${Mr.^Ms.}$ X ${Hi[128]^Hello[128]}$ Y",
+      "target": "${Herr^Frau}$ X Hallo[128] Y",
       "blocked": true
     },
     {
@@ -819,10 +819,10 @@
       "blocked": true
     },
     {
-      "name": "a letter without its title still blocks",
+      "name": "a letter without its title is a note",
       "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
       "target": "Liebe @,^Bitte schön.%item object 388 5 %% Ein Geschenk",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "a #$e# counted by $1 still blocks",
@@ -845,8 +845,176 @@
     {
       "name": "a letter gender version that adds a placeholder still blocks",
       "source": "Hi {0}![#]T",
-      "target": "Hallo!¦Hallo {0}{0}![#]T",
+      "target": "Hallo!¦Hallo {0}{1}![#]T",
       "blocked": true
+    },
+    {
+      "name": "a dropped #$b# only merges dialogue boxes",
+      "source": "Hi.#$b#Bye.",
+      "target": "Hallo. Tschüss.",
+      "blocked": false
+    },
+    {
+      "name": "an added #$b# only splits dialogue boxes",
+      "source": "Hi. Bye.",
+      "target": "Hallo.#$b#Tschüss.",
+      "blocked": false
+    },
+    {
+      "name": "a #$b# replaced by # ends the conversation early",
+      "source": "Hi.#$b#Bye.",
+      "target": "Hallo.#Tschüss.",
+      "blocked": true
+    },
+    {
+      "name": "a malformed #$b$ may be dropped",
+      "source": "Hi.#$b$Bye.",
+      "target": "Hallo. Tschüss.",
+      "blocked": false
+    },
+    {
+      "name": "a * in a quick-question reply may be dropped",
+      "source": "#$y 'Hi?_Yes_Great*Thanks_No_Oh'",
+      "target": "#$y 'Hallo?_Ja_Toll Danke_Nein_Oh'",
+      "blocked": false
+    },
+    {
+      "name": "a #$k# page may be dropped",
+      "source": "Bye.#$k#",
+      "target": "Tschüss.",
+      "blocked": false
+    },
+    {
+      "name": "an inline $k still blocks",
+      "source": "Bye.$k",
+      "target": "Tschüss.",
+      "blocked": true
+    },
+    {
+      "name": "a # added after $1 still blocks",
+      "source": "$1 metHarvey#Nice.#$e#Again.",
+      "target": "$1 metHarvey#Schön.#Wirklich.#$e#Nochmal.",
+      "blocked": true
+    },
+    {
+      "name": "a #$b# dropped after $c still blocks",
+      "source": "$c 0.5#Sunny.#$b#Warm.#Rainy.",
+      "target": "$c 0.5#Sonnig. Warm.#Regnerisch.",
+      "blocked": true
+    },
+    {
+      "name": "a | dropped in a $d dialogue still blocks",
+      "source": "$d bus#The bus runs.|The bus is broken.",
+      "target": "$d bus#Der Bus fährt. Der Bus ist kaputt.",
+      "blocked": true
+    },
+    {
+      "name": "an added || only changes the text per week",
+      "source": "Hello!",
+      "target": "Hallo!||Servus!",
+      "blocked": false
+    },
+    {
+      "name": "a dropped [FarmName] is a note",
+      "source": "Welcome to [FarmName]!",
+      "target": "Willkommen!",
+      "blocked": false
+    },
+    {
+      "name": "a translated bracket token is a note",
+      "source": "It is [Season].",
+      "target": "Es ist [Jahreszeit].",
+      "blocked": false
+    },
+    {
+      "name": "an added [ArticleFor] is a note",
+      "source": "Bring [SuggestedItem].",
+      "target": "Bring [ArticleFor [SuggestedItem]].",
+      "blocked": false
+    },
+    {
+      "name": "a dropped item bracket still blocks",
+      "source": "Here, take this.[128]",
+      "target": "Hier, nimm das.",
+      "blocked": true
+    },
+    {
+      "name": "an empty [] still blocks",
+      "source": "Hello!",
+      "target": "Hallo []!",
+      "blocked": true
+    },
+    {
+      "name": "a repeated {0} is a note",
+      "source": "{0} found {1}.",
+      "target": "{0} hat {1} gefunden, {0}!",
+      "blocked": false
+    },
+    {
+      "name": "a new {n} above the English ones still blocks",
+      "source": "{0} found it.",
+      "target": "{0} hat {1} gefunden.",
+      "blocked": true
+    },
+    {
+      "name": "a dropped lone { is a note",
+      "source": "Wait{",
+      "target": "Warte",
+      "blocked": false
+    },
+    {
+      "name": "an added lone } still blocks",
+      "source": "Wait.",
+      "target": "Warte}.",
+      "blocked": true
+    },
+    {
+      "name": "dialogue syntax in a letter is plain text",
+      "source": "Hi.#$b#Bye.%item object 388 5 %%[#]T",
+      "target": "Hallo. Tschüss.%item object 388 5 %%[#]T",
+      "blocked": false
+    },
+    {
+      "name": "braces in a letter are plain text",
+      "source": "Hi {there}![#]T",
+      "target": "Hallo!{[#]T",
+      "blocked": false
+    },
+    {
+      "name": "an %item that only differs in spacing and case is the same",
+      "source": "Hi.%item object 388 5 %%[#]T",
+      "target": "Hallo.%item  Object 388  5%%[#]T",
+      "blocked": false
+    },
+    {
+      "name": "an %item with a changed item still blocks",
+      "source": "Hi.%item object 388 5 %%[#]T",
+      "target": "Hallo.%item object 389 5 %%[#]T",
+      "blocked": true
+    },
+    {
+      "name": "a | in a $c dialogue is plain text",
+      "source": "$c 0.5#A|x#B",
+      "target": "$c 0.5#A x#B",
+      "blocked": false
+    },
+    {
+      "name": "a dropped empty [] is a note",
+      "source": "Hi []",
+      "target": "Hallo",
+      "blocked": false
+    },
+    {
+      "name": "a quick question in a letter is plain text",
+      "source": "Dear @, hi#$y 'a_b_c'[#]Title",
+      "target": "Liebe @, hallo 'a_b_c'[#]Titel",
+      "blocked": false
+    },
+    {
+      "name": "a wrong-case command in a letter is plain text",
+      "source": "Dear @, A#$b#B[#]Title",
+      "target": "Liebe @, A#$B#B[#]Titel",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -858,7 +1026,7 @@
           "token": "#$b#",
           "sourceCount": 1,
           "targetCount": 0,
-          "severity": "error"
+          "severity": "warning"
         },
         {
           "token": "{{Extra}}",
@@ -873,8 +1041,8 @@
           "severity": "warning"
         }
       ],
-      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. {{Extra}} is not in the English text. The game would show it as raw text. {{name}} is missing from the translation. The game shows nothing in its place. Fine if intended.",
-      "errorsText": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. {{Extra}} is not in the English text. The game would show it as raw text."
+      "text": "#$b# is missing from the translation. It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended. {{Extra}} is not in the English text. The game would show it as raw text. {{name}} is missing from the translation. The game shows nothing in its place. Fine if intended.",
+      "errorsText": "{{Extra}} is not in the English text. The game would show it as raw text."
     },
     {
       "source": "Take [ArticleFor [SuggestedItem]].",
@@ -889,12 +1057,12 @@
     {
       "source": "Hi.#$b#Bye.",
       "target": "Hallo. Tschüss.",
-      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently."
+      "text": "#$b# is missing from the translation. It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended."
     },
     {
       "source": "A gift.%item object 128 1 %%[#]Title",
       "target": "Ein Geschenk.%item object 128 1 %%Titel",
-      "text": "[#] is missing from the translation. The letter title would show as part of the letter text."
+      "text": "[#] is missing from the translation. The letter title would show at the end of the letter text. Fine if intended."
     },
     {
       "source": "A gift.%item object 128 1 %%",
@@ -919,7 +1087,7 @@
     {
       "source": "Welcome to [FarmName].",
       "target": "Willkommen.",
-      "text": "[FarmName] is missing from the translation. The game would not insert this value or item."
+      "text": "[FarmName] is missing from the translation. The game would not insert this value. Fine if intended."
     },
     {
       "source": "Thanks @!",
@@ -944,7 +1112,7 @@
     {
       "source": "Hi.#$b$Bye.",
       "target": "Hallo. Tschüss.",
-      "text": "#$b$ is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently."
+      "text": "#$b$ is missing from the translation. The game does not read it as a command and shows it as text, as in the English text. Fine if intended."
     },
     {
       "source": "Go.#$e#Later.",
@@ -969,7 +1137,7 @@
     {
       "source": "Take it.",
       "target": "Nimm [articlefor Apfel] Apfel.",
-      "text": "[articlefor Apfel] is not in the English text. The game would show it as raw text."
+      "text": "[articlefor Apfel] is not in the English text. The game puts no article here in other languages. Fine if intended."
     },
     {
       "source": "Money!%action AddMoney 500 %%",
@@ -1019,7 +1187,7 @@
     {
       "source": "A[#]T",
       "target": "AT",
-      "text": "[#] is missing from the translation. The letter title would show as part of the letter text."
+      "text": "[#] is missing from the translation. The letter title would show at the end of the letter text. Fine if intended."
     },
     {
       "source": "A",
@@ -1044,7 +1212,7 @@
     {
       "source": "Hi.",
       "target": "Hallo { Du.",
-      "text": "A single { is not in the English text. The game treats single braces as commands and hides text."
+      "text": "A single { is not in the English text. Mods that fill in values such as {0} would fail on it, and dialogue reads it as a command."
     },
     {
       "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
@@ -1054,7 +1222,7 @@
     {
       "source": "$y 'Hungry?_Yes_Here.*Enjoy!'",
       "target": "$y 'Hunger?_Ja_Hier. Guten Appetit!'",
-      "text": "* is missing from the translation. In a quick-question reply it starts a new dialogue box, so the text would be split into boxes differently."
+      "text": "* is missing from the translation. In a quick-question reply it starts a new dialogue box. Fine if intended."
     },
     {
       "source": "${He^She}$ is here.",
@@ -1084,7 +1252,7 @@
     {
       "source": "Hi.#$b#Bye.",
       "target": "你好。＃＄b＃再见。",
-      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. The text contains full-width ＄＃ where the English text has $ #. The game shows them as they are; use the normal characters."
+      "text": "#$b# is missing from the translation. It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended. The text contains full-width ＄＃ where the English text has $ #. The game shows them as they are; use the normal characters."
     },
     {
       "source": "Thanks @!",
@@ -1109,7 +1277,7 @@
     {
       "source": "Welcome to [FarmName].",
       "target": "欢迎来到［FarmName］。",
-      "text": "[FarmName] is missing from the translation. The game would not insert this value or item. The text contains full-width ［］ where the English text has [ ]. The game shows them as they are; use the normal characters."
+      "text": "[FarmName] is missing from the translation. The game would not insert this value. Fine if intended. The text contains full-width ［］ where the English text has [ ]. The game shows them as they are; use the normal characters."
     },
     {
       "source": "Hi.#$b#Bye.",
@@ -1125,11 +1293,11 @@
           "token": "#$b#",
           "sourceCount": 1,
           "targetCount": 0,
-          "severity": "error"
+          "severity": "warning"
         }
       ],
       "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently.",
-      "errorsText": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently."
+      "errorsText": "#$B# is not a dialogue command the game knows, so it would show as text."
     },
     {
       "source": "Go.#$e#Later.",
@@ -1165,15 +1333,30 @@
           "token": "#$b#",
           "sourceCount": 2,
           "targetCount": 0,
-          "severity": "error"
+          "severity": "warning"
         }
       ],
-      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently. #$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently."
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Did you mean #$b#? It starts a new dialogue box, so the text would be split into boxes differently. #$b# is missing from the translation. It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended."
     },
     {
       "source": "Fine.",
       "target": "好＄。",
       "text": ""
+    },
+    {
+      "source": "$1 flag#Hello#$e#Again",
+      "target": "$1flag#Hallo#Wieder",
+      "text": "# is not in the English text. A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show. #$e# is missing from the translation. A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show. The portrait $1 is not in the English text: the character shows a different face. Fine if intended. $1 flag# is missing from the translation. The game needs it to run the dialogue (answers, flags, or events)."
+    },
+    {
+      "source": "Dear @, A#$b#B[#]Title",
+      "target": "Liebe @, A#$B#B[#]Titel",
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Fine if intended."
+    },
+    {
+      "source": "Hi []",
+      "target": "Hallo",
+      "text": "[] is missing from the translation. The game could not read it in the English text either. Fine if intended."
     }
   ]
 }

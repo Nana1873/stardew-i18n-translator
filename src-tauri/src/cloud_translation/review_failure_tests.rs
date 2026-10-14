@@ -88,8 +88,8 @@ fn two_plans() -> (
 
 #[test]
 fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
-    let items = vec![item("item-0000", "Hello, [FarmName].", 0)];
-    let drafts = vec![translation("item-0000", "Hallo, [FarmName].")];
+    let items = vec![item("item-0000", "Hello, [128].", 0)];
+    let drafts = vec![translation("item-0000", "Hallo, [128].")];
     let plans = vec![ReviewPlan {
         items: items.clone(),
         drafts: drafts.clone(),
@@ -300,7 +300,7 @@ fn review_timeout_and_refusal_are_skipped_with_their_own_reason() {
 
 #[test]
 fn failed_repairs_keep_translations_and_report_the_skipped_texts() {
-    let mut parsnip = item("item-0000", "Parsnip for [FarmName]", 0);
+    let mut parsnip = item("item-0000", "Parsnip for [128]", 0);
     parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
     let items = vec![parsnip];
     let reviewed = vec![translation("item-0000", "Rübe für dich")];
@@ -356,10 +356,10 @@ fn failed_repairs_keep_translations_and_report_the_skipped_texts() {
 
 #[test]
 fn terminology_followup_that_newly_damages_a_token_is_rejected() {
-    let mut parsnip = item("item-0000", "Parsnip for [FarmName]", 0);
+    let mut parsnip = item("item-0000", "Parsnip for [128]", 0);
     parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
     let items = vec![parsnip];
-    let reviewed = vec![translation("item-0000", "Rübe für [FarmName]")];
+    let reviewed = vec![translation("item-0000", "Rübe für [128]")];
     let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
     assert_eq!(plans.len(), 1);
     let mut calls = 0usize;

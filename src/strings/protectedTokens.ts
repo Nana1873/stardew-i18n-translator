@@ -231,6 +231,39 @@ function isPlaceholder(token: string): boolean {
   );
 }
 
+/** What a comparison knows about the whole string, for `tokenSeverity`.
+ * Mirrors Rust `SeverityContext`. */
+export interface SeverityContext {
+  /** The translation puts two different portraits on one page. */
+  introducesMultiplePortraits: boolean;
+  /** `$1`, `$c`, or `$d` count the dialogue pages. */
+  pagesCounted: boolean;
+  /** The translation has more bare `#` than the English text. */
+  addsPageBreaks: boolean;
+  /** The highest `{n}` index in the English text, if any. */
+  maxPositional: number | null;
+  /** A letter: only the text before `[#]` is shown and dialogue syntax is
+   * plain text there (`LetterViewerMenu`). */
+  letter: boolean;
+}
+
+export function positionalIndex(token: string): number | null {
+  return /^\{\d+\}$/.test(token) ? Number(token.slice(1, -1)) : null;
+}
+
+/** Tokens that still act in a letter: rewards, actions, he/she switches, and
+ * placeholders the mod fills in. Mirrors Rust `acts_in_letter`. */
+function actsInLetter(token: string): boolean {
+  return (
+    token.startsWith("%item") ||
+    token.startsWith("%action") ||
+    token === "${" ||
+    token === "}$" ||
+    isPlaceholder(token) ||
+    isEmptyBracket(token)
+  );
+}
+
 /**
  * Severity of one token-count difference, verified against the Stardew 1.6
  * parsers (mirrors Rust `tokens::token_severity`). Errors break the game;
@@ -240,10 +273,14 @@ export function tokenSeverity(
   token: string,
   sourceCount: number,
   targetCount: number,
-  introducesMultiplePortraits: boolean,
-  pageSkip = false,
+  context: SeverityContext,
 ): TokenSeverity {
   const dropped = targetCount < sourceCount;
+  if (context.letter && !actsInLetter(token)) return "warning";
+  // `$1`, `$c`, and `$d` count pages, so any page change shows another line.
+  if (context.pagesCounted && isPageToken(token)) return "error";
+  const { introducesMultiplePortraits, maxPositional } = context;
+  const index = positionalIndex(token);
   const harmless =
     isGenderSwitchShape(token) ||
     token === "@" ||
@@ -255,31 +292,113 @@ export function tokenSeverity(
     // the change puts two different portraits on one page.
     ((token === "^" || token === "#") && !introducesMultiplePortraits) ||
     (isPortraitCommand(token) && !introducesMultiplePortraits) ||
-    // A missing placeholder only drops its value; a renamed or extra one
-    // stays visible as literal `{{...}}` or breaks string.Format.
+    // A missing placeholder only drops its value. A renamed or extra
+    // `{{...}}` stays literal, and in dialogue its `}` hides the text before
+    // it; a `{n}` above the English ones makes string.Format throw.
     (dropped && isPlaceholder(token)) ||
-    (dropped && token.toLowerCase().startsWith("[articlefor")) ||
-    // After `$1` or `$c` the game counts pages, so there it is an error.
-    (isDialogueEnd(token) && !pageSkip);
+    (index !== null && maxPositional !== null && index <= maxPositional) ||
+    isSkippedPage(token) ||
+    // Without `#$b#` the game moves long text into extra boxes itself; a
+    // bare `#` in its place ends the conversation early.
+    (token === "#$b#" && !(dropped && context.addsPageBreaks)) ||
+    isMalformedBreak(token) ||
+    // A `*` in a `$y` reply becomes `#$b#` (Dialogue.cs).
+    token === "*" ||
+    // A lone `{` in the English text cannot be a format item, and in
+    // dialogue it only keeps the conversation going.
+    (dropped && token === "{") ||
+    (dropped && token === "[#]") ||
+    // `||` only changes which text shows in which week (Dialogue.cs).
+    token === "||" ||
+    // An empty `[]` already fails in the English text.
+    (dropped && isEmptyBracket(token)) ||
+    isTextBracket(token);
   return harmless ? "warning" : "error";
 }
 
-/** `#$e#`: SDV 1.6 recognizes `$e` in `Dialogue.parseDialogueString` but does
- * nothing with it (the page is dropped; `Dialogue.dialogueEnd` is unused).
- * `#$e$` or `#$e*` is not that command and shows as text. Mirrors Rust
- * `is_dialogue_end`. */
-export function isDialogueEnd(token: string): boolean {
-  return token === "#$e#";
+/** `#$e#` and `#$k#` on their own page: SDV 1.6 recognizes `$e` and `$k` in
+ * `Dialogue.parseDialogueString` but adds nothing for them (the page is
+ * dropped; `Dialogue.dialogueEnd` is unused, and `$k` only acts inside a
+ * text line). `#$e$` or `#$e*` is not that command and shows as text.
+ * Mirrors Rust `is_skipped_page`. */
+export function isSkippedPage(token: string): boolean {
+  return token === "#$e#" || token === "#$k#";
 }
 
-/** Whether a page starts with `$1 <flag>` or `$c <chance>`: the game then
- * jumps three pages ahead (`i += 3` in `Dialogue.parseDialogueString`), so
- * every page after it, an empty `$e` one included, is counted. Mirrors Rust
- * `has_page_skip`. */
-export function hasPageSkip(value: string): boolean {
+/** Whether a page starts with `$1 <flag>`, `$c <chance>`, or `$d <check>`:
+ * `$1` and `$c` jump three pages ahead (`i += 3` in
+ * `Dialogue.parseDialogueString`) and `$d` picks a version by splitting the
+ * rest at `|` or `#`, so every page counts, an empty `$e` one included.
+ * Mirrors Rust `counts_pages`. */
+export function countsPages(value: string): boolean {
   return value
     .split("#")
-    .some((page) => page.startsWith("$1 ") || page.startsWith("$c "));
+    .some(
+      (page) =>
+        page.startsWith("$1 ") ||
+        page.startsWith("$c ") ||
+        page.startsWith("$d "),
+    );
+}
+
+/** A `$1`, `$c`, or `$d` command token, at the start of the string or after
+ * a `#`. Mirrors Rust `is_page_counting_command`. */
+export function isPageCountingCommand(token: string): boolean {
+  const command = token.startsWith("#") ? token.slice(1) : token;
+  return (
+    command.startsWith("$1 ") ||
+    command.startsWith("$c ") ||
+    command.startsWith("$d ")
+  );
+}
+
+/** Whether a page starts with `$d <check>`, whose two versions are split at
+ * `|` (`Dialogue.parseDialogueString`). Mirrors Rust `picks_version`. */
+export function picksVersion(value: string): boolean {
+  return value.split("#").some((page) => page.startsWith("$d "));
+}
+
+/** Tokens that split dialogue pages, which `$1`, `$c`, and `$d` count.
+ * Mirrors Rust `is_page_token`. */
+export function isPageToken(token: string): boolean {
+  return (
+    token === "#" || token === "#$b#" || token === "|" || isSkippedPage(token)
+  );
+}
+
+/** `#$b#` with a `$` or `*` instead of its closing `#` is no command; the
+ * game shows it as text in the English line too. Mirrors Rust
+ * `is_malformed_break`. */
+export function isMalformedBreak(token: string): boolean {
+  return token === "#$b$" || token === "#$b*";
+}
+
+/** `[]` or `[ ]`: `TokenParser.ParseTag` reads the first word of an empty
+ * token and throws, so dialogue shows "..." and a Mail Framework Mod letter
+ * cannot be opened. Mirrors Rust `is_empty_bracket`. */
+export function isEmptyBracket(token: string): boolean {
+  return /^\[ *\]$/.test(token);
+}
+
+/** Bracket tokens that give an item in dialogue (`Dialogue.cs` item grab) or
+ * split a letter. Other bracket tokens only insert text, and an unknown or
+ * broken one stays visible as `[...]` (`TokenParser`). Mirrors Rust
+ * `is_logic_bracket`. */
+function isLogicBracket(token: string): boolean {
+  if (!token.startsWith("[") || !token.endsWith("]")) return false;
+  const body = token.slice(1, -1);
+  return (
+    body === "#" ||
+    isAsciiDigits(body) ||
+    isQualifiedItemId(body) ||
+    isItemIdPool(body)
+  );
+}
+
+export function isTextBracket(token: string): boolean {
+  return (
+    token.startsWith("[") && !isLogicBracket(token) && !isEmptyBracket(token)
+  );
 }
 
 /** Shape identities compare each well-formed switch as one block. They aren't
@@ -436,7 +555,31 @@ function readMailCommand(value: string, offset: number): Token | null {
     return null;
   }
   const end = value.indexOf("%%", offset);
-  return end >= 0 ? token(value, offset, end + 2) : null;
+  if (end < 0) return null;
+  const raw = value.slice(offset, end + 2);
+  return { raw: normalizeMailCommand(raw) ?? raw, end: end + 2 };
+}
+
+/** `%item type args %%` and `%action args %%`: `LetterViewerMenu` splits both
+ * on ASCII spaces with empty entries removed and lowercases the item type
+ * (`HandleItemCommand`, `TriggerActionManager.ParseAction`), so only the
+ * spacing and that type's case are canonicalized. A quoted action argument
+ * keeps its spaces, so such an action stays as written. Mirrors Rust
+ * `normalize_mail_command`. */
+function normalizeMailCommand(raw: string): string | null {
+  if (!raw.endsWith("%%")) return null;
+  const inner = raw.slice(0, -2);
+  const name = inner.startsWith("%item ")
+    ? "%item"
+    : inner.startsWith("%action ")
+      ? "%action"
+      : null;
+  if (name === null) return null;
+  const rest = inner.slice(name.length + 1);
+  if (name === "%action" && rest.includes('"')) return null;
+  const parts = rest.split(" ").filter(Boolean);
+  if (name === "%item" && parts.length > 0) parts[0] = parts[0].toLowerCase();
+  return [name, ...parts, "%%"].join(" ");
 }
 
 // BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
@@ -642,6 +785,8 @@ function findBalancedBracketEnd(value: string, offset: number): number | null {
 }
 
 function isProtectedBracketBody(body: string): boolean {
+  // `[]` or `[ ]` makes `TokenParser` throw.
+  if (/^ *$/.test(body)) return true;
   if (
     body === "#" ||
     isAsciiDigits(body) ||
@@ -860,8 +1005,8 @@ function readSingleCharacterToken(value: string, offset: number): Token | null {
     char === "^" ||
     char === "#" ||
     char === "\n" ||
-    // A stray `{` marks "continues on next screen" and a `}` turns the text
-    // before it into a mail flag (Dialogue.cs); both hide dialogue text.
+    // In dialogue a stray `{` marks "continues on next screen" and a `}`
+    // turns the text before it into a mail flag (Dialogue.cs).
     char === "{" ||
     char === "}" ||
     (char === "'" && isPairedQuoteDelimiter(value, offset))

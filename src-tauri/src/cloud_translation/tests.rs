@@ -62,7 +62,7 @@ fn disabled_quality_review_returns_drafts_without_entering_review() {
 
 #[test]
 fn disabled_quality_review_skips_final_token_repair() {
-    let items = vec![prepared_item("item-0000", "Hello, [FarmName]!")];
+    let items = vec![prepared_item("item-0000", "Hello, [128]!")];
     let drafts = vec![provider_translation("item-0000", "Hallo!")];
 
     let outcome = tauri::async_runtime::block_on(repair_token_mismatches_once(
@@ -314,7 +314,7 @@ fn cancellation_ends_the_wait_before_a_transient_retry() {
 
 #[test]
 fn full_review_prompt_covers_every_quality_dimension_and_reuses_all_context() {
-    let mut item = prepared_item("item-0000", "Parsnip soup for you, [FarmName].");
+    let mut item = prepared_item("item-0000", "Parsnip soup for you, [128].");
     item.section = Some("Abigail dialogue".to_string());
     item.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
     item.context.before.push(crate::ai::AiContextSource {
@@ -323,7 +323,7 @@ fn full_review_prompt_covers_every_quality_dimension_and_reuses_all_context() {
     item.context.after.push(crate::ai::AiContextSource {
         source: "Do you like it?".to_string(),
     });
-    let draft = provider_translation("item-0000", "Rübensuppe für dich, [FarmName].");
+    let draft = provider_translation("item-0000", "Rübensuppe für dich, [128].");
 
     let prompt = build_review_attempt_prompt(
         "German",
@@ -586,8 +586,8 @@ fn empty_sparse_review_keeps_every_draft_without_retry() {
 
 #[test]
 fn review_token_damage_is_rejected_and_keeps_the_draft() {
-    let items = vec![prepared_item("item-0000", "Hello, [FarmName].")];
-    let drafts = vec![provider_translation("item-0000", "Hallo, [FarmName].")];
+    let items = vec![prepared_item("item-0000", "Hello, [128].")];
+    let drafts = vec![provider_translation("item-0000", "Hallo, [128].")];
     let plans = build_review_plans("German", &items, &drafts).unwrap().0;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
@@ -848,10 +848,10 @@ fn persistent_invalid_terminology_repair_is_bisected_without_resending_successes
 
 #[test]
 fn existing_token_damage_reaches_failed_final_repair_as_blocking_diff() {
-    let mut item = prepared_item("item-0000", "Parsnip for [FarmName]");
+    let mut item = prepared_item("item-0000", "Parsnip for [128]");
     item.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
     let items = vec![item];
-    // The reviewed draft already lacks [FarmName], so the terminology fix adds
+    // The reviewed draft already lacks [128], so the terminology fix adds
     // no new mismatch and is accepted; the old damage still needs repair.
     let reviewed = vec![provider_translation("item-0000", "Rübe für dich")];
     let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
@@ -900,11 +900,11 @@ fn existing_token_damage_reaches_failed_final_repair_as_blocking_diff() {
 #[test]
 fn token_repair_plan_contains_only_affected_ids_and_concrete_counts() {
     let items = vec![
-        prepared_item("item-0000", "Hello [FarmName]"),
+        prepared_item("item-0000", "Hello [128]"),
         prepared_item("item-0001", "Plain source"),
     ];
     let translations = vec![
-        provider_translation("item-0000", "Hallo [Other.Token]"),
+        provider_translation("item-0000", "Hallo [129]"),
         provider_translation("item-0001", "Einfacher Text"),
     ];
 
@@ -918,8 +918,8 @@ fn token_repair_plan_contains_only_affected_ids_and_concrete_counts() {
     assert_eq!(plan.items[0].id, "item-0000");
     assert_eq!(strings.len(), 1);
     assert_eq!(strings[0]["id"], "item-0000");
-    assert_eq!(strings[0]["source"], "Hello [FarmName]");
-    assert_eq!(strings[0]["translation"], "Hallo [Other.Token]");
+    assert_eq!(strings[0]["source"], "Hello [128]");
+    assert_eq!(strings[0]["translation"], "Hallo [129]");
     assert_eq!(strings[0]["tokenDifferences"].as_array().unwrap().len(), 2);
     assert!(plan
         .prompt
@@ -938,9 +938,9 @@ fn token_repair_plan_contains_only_affected_ids_and_concrete_counts() {
 #[test]
 fn token_repair_plans_split_by_serialized_size_and_schedule_each_item_once() {
     let items = vec![
-        prepared_item("item-0000", "Hello [FarmName]"),
-        prepared_item("item-0001", "Hello [FarmName]"),
-        prepared_item("item-0002", "Hello [FarmName]"),
+        prepared_item("item-0000", "Hello [128]"),
+        prepared_item("item-0001", "Hello [128]"),
+        prepared_item("item-0002", "Hello [128]"),
     ];
     let large = "x".repeat(ai::MAX_CHUNK_BYTES / 2);
     let translations = vec![
@@ -966,7 +966,7 @@ fn token_repair_plans_split_by_serialized_size_and_schedule_each_item_once() {
 #[test]
 fn token_repair_merge_replaces_only_fully_valid_repairs() {
     let items = vec![
-        prepared_item("item-0000", "Hello [FarmName]"),
+        prepared_item("item-0000", "Hello [128]"),
         prepared_item("item-0001", "Count [128]"),
     ];
     let originals = vec![
@@ -974,19 +974,19 @@ fn token_repair_merge_replaces_only_fully_valid_repairs() {
         provider_translation("item-0001", "Anzahl"),
     ];
     let repairs = vec![
-        provider_translation("item-0000", "Hallo [FarmName]"),
+        provider_translation("item-0000", "Hallo [128]"),
         provider_translation("item-0001", "Noch immer ohne Token"),
     ];
 
     let merged = merge_valid_token_repairs(&items, &originals, &items, repairs);
 
-    assert_eq!(merged[0].text, "Hallo [FarmName]");
+    assert_eq!(merged[0].text, "Hallo [128]");
     assert_eq!(merged[1].text, "Anzahl");
 }
 
 #[test]
 fn individually_oversized_token_repair_is_skipped_and_keeps_its_original() {
-    let items = vec![prepared_item("item-0000", "Hello [FarmName]")];
+    let items = vec![prepared_item("item-0000", "Hello [128]")];
     let instructions = token_repair_instructions("German");
     let translation =
         "x".repeat(ai::MAX_CHUNK_BYTES - instructions.len() - PROMPT_INPUT_SEPARATOR.len());
@@ -1015,8 +1015,8 @@ fn individually_oversized_token_repair_is_skipped_and_keeps_its_original() {
 #[test]
 fn failed_token_repair_sub_batch_keeps_its_original_and_later_plans_continue() {
     let items = vec![
-        prepared_item("item-0000", "Hello [FarmName]"),
-        prepared_item("item-0001", "Hello [FarmName]"),
+        prepared_item("item-0000", "Hello [128]"),
+        prepared_item("item-0001", "Hello [128]"),
     ];
     let large = "x".repeat(ai::MAX_CHUNK_BYTES / 2);
     let originals = vec![
@@ -1040,7 +1040,7 @@ fn failed_token_repair_sub_batch_keeps_its_original_and_later_plans_continue() {
             } else {
                 Ok(expected
                     .iter()
-                    .map(|item| provider_translation(&item.id, "Repaired [FarmName]"))
+                    .map(|item| provider_translation(&item.id, "Repaired [128]"))
                     .collect())
             };
             std::future::ready(result)
@@ -1051,14 +1051,14 @@ fn failed_token_repair_sub_batch_keeps_its_original_and_later_plans_continue() {
     assert_eq!(calls, 2);
     assert!(!outcome.cancelled);
     assert_eq!(outcome.translations[0].text, large);
-    assert_eq!(outcome.translations[1].text, "Repaired [FarmName]");
+    assert_eq!(outcome.translations[1].text, "Repaired [128]");
 }
 
 #[test]
 fn cancellation_returns_repairs_completed_by_earlier_sub_batches() {
     let items = vec![
-        prepared_item("item-0000", "Hello [FarmName]"),
-        prepared_item("item-0001", "Hello [FarmName]"),
+        prepared_item("item-0000", "Hello [128]"),
+        prepared_item("item-0001", "Hello [128]"),
     ];
     let large = "x".repeat(ai::MAX_CHUNK_BYTES / 2);
     let originals = vec![
@@ -1079,7 +1079,7 @@ fn cancellation_returns_repairs_completed_by_earlier_sub_batches() {
             let result = if calls == 1 {
                 Ok(expected
                     .iter()
-                    .map(|item| provider_translation(&item.id, "Repaired [FarmName]"))
+                    .map(|item| provider_translation(&item.id, "Repaired [128]"))
                     .collect())
             } else {
                 Err(ProviderFailure::Cancelled)
@@ -1091,7 +1091,7 @@ fn cancellation_returns_repairs_completed_by_earlier_sub_batches() {
 
     assert_eq!(calls, 2);
     assert!(outcome.cancelled);
-    assert_eq!(outcome.translations[0].text, "Repaired [FarmName]");
+    assert_eq!(outcome.translations[0].text, "Repaired [128]");
     assert_eq!(outcome.translations[1].text, large);
 }
 

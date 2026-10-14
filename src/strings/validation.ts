@@ -23,10 +23,13 @@ import {
   articleForArgument,
   branchText,
   extractProtectedTokens,
-  hasPageSkip,
+  countsPages,
   pagesWithMultiplePortraits,
+  picksVersion,
+  positionalIndex,
   isGenderSwitchShape,
   tokenSeverity,
+  type SeverityContext,
 } from "./protectedTokens";
 import { describeTokenIssue, type TokenDifference } from "./tokenIssueText";
 
@@ -249,7 +252,9 @@ export function tokenDifferences(
   source: string,
   target: string,
 ): TokenDifference[] {
-  return mailDifferences(source, target) ?? textDifferences(source, target);
+  return (
+    mailDifferences(source, target) ?? textDifferences(source, target, false)
+  );
 }
 
 const MAIL_TITLE = "[#]";
@@ -260,8 +265,9 @@ const MAIL_TITLE = "[#]";
  * collection shows the text after it as the title, unprocessed
  * (`LetterViewerMenu`, `CollectionsPage`; SDV 1.6). Text after a second
  * `[#]` never appears. So for an English letter with one `[#]` only the
- * letter text is compared, per player gender; a missing title stays an
- * error and extra `[#]` are a note. Mirrors Rust `mail_differences`.
+ * letter text is compared, per player gender, and dialogue syntax there is
+ * plain text; a missing title shows at the end of the letter and extra `[#]`
+ * hide text, so both are notes. Mirrors Rust `mail_differences`.
  */
 function mailDifferences(
   source: string,
@@ -269,7 +275,6 @@ function mailDifferences(
 ): TokenDifference[] | null {
   if (source.split(MAIL_TITLE).length - 1 !== 1) return null;
   const targetTitles = target.split(MAIL_TITLE).length - 1;
-  if (targetTitles === 0) return null;
   const sourceViews = genderViews(source.split(MAIL_TITLE)[0]);
   const targetViews = genderViews(target.split(MAIL_TITLE)[0]);
   const merged = new Map<string, TokenDifference>();
@@ -286,12 +291,19 @@ function mailDifferences(
   ) {
     const sourceView = sourceViews[Math.min(index, sourceViews.length - 1)];
     const targetView = targetViews[Math.min(index, targetViews.length - 1)];
-    for (const difference of textDifferences(sourceView, targetView)) {
+    for (const difference of textDifferences(sourceView, targetView, true)) {
       const known = merged.get(difference.token);
       if (!known || worse(difference, known))
         merged.set(difference.token, difference);
     }
   }
+  if (targetTitles === 0)
+    merged.set(MAIL_TITLE, {
+      token: MAIL_TITLE,
+      sourceCount: 1,
+      targetCount: 0,
+      severity: "warning",
+    });
   if (targetTitles > 1)
     merged.set(MAIL_TITLE, {
       token: MAIL_TITLE,
@@ -323,17 +335,48 @@ function genderViews(body: string): string[] {
   return [body];
 }
 
-function textDifferences(source: string, target: string): TokenDifference[] {
+/** `||` splits dialogue into versions that change every week, and in a `$d`
+ * dialogue a single `|` separates its two versions (`Dialogue.cs`). Both are
+ * counted next to the extracted tokens; elsewhere `|` is plain text. Mirrors
+ * Rust `count_dialogue_separators`. */
+function countDialogueSeparators(
+  value: string,
+  counts: Map<string, number>,
+  versions: boolean,
+): void {
+  const weekly = value.split("||").length - 1;
+  if (weekly > 0) counts.set("||", weekly);
+  const single = value.split("|").length - 1 - 2 * weekly;
+  if (versions && single > 0) counts.set("|", single);
+}
+
+function textDifferences(
+  source: string,
+  target: string,
+  letter: boolean,
+): TokenDifference[] {
   const { source: sourceTokens, target: targetTokens } = comparableTokenCounts(
     source,
     target,
   );
+  const pagesCounted = countsPages(source) || countsPages(target);
+  const versions = picksVersion(source) || picksVersion(target);
+  countDialogueSeparators(source, sourceTokens, versions);
+  countDialogueSeparators(target, targetTokens, versions);
   const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
     isGenderSwitchShape,
   );
-  const introducesMultiplePortraits =
-    pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
-  const pageSkip = hasPageSkip(source) || hasPageSkip(target);
+  const positions = [...sourceTokens.keys()]
+    .map(positionalIndex)
+    .filter((index): index is number => index !== null);
+  const context: SeverityContext = {
+    introducesMultiplePortraits:
+      pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source),
+    pagesCounted,
+    addsPageBreaks: (targetTokens.get("#") ?? 0) > (sourceTokens.get("#") ?? 0),
+    maxPositional: positions.length > 0 ? Math.max(...positions) : null,
+    letter,
+  };
   const differences: TokenDifference[] = [];
   const addDifference = (
     token: string,
@@ -344,13 +387,7 @@ function textDifferences(source: string, target: string): TokenDifference[] {
       token,
       sourceCount,
       targetCount,
-      severity: tokenSeverity(
-        token,
-        sourceCount,
-        targetCount,
-        introducesMultiplePortraits,
-        pageSkip,
-      ),
+      severity: tokenSeverity(token, sourceCount, targetCount, context),
     });
   for (const [token, count] of sourceTokens) {
     const found = targetTokens.get(token) ?? 0;

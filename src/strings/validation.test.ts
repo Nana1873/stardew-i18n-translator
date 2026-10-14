@@ -3,14 +3,14 @@ import { validate, worstSeverity } from "./validation";
 
 describe("validate", () => {
   it("flags a missing game-breaking token as an error", () => {
-    const issues = validate("Hello#$b#Bye", "Hallo Tschuess");
+    const issues = validate("Here.[128]", "Hier.");
     expect(issues).toEqual([
       {
         ruleId: "token-missing",
         severity: "error",
         message:
-          "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently.",
-        token: "#$b#",
+          "[128] is missing from the translation. The game would not give this item.",
+        token: "[128]",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
@@ -181,7 +181,7 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently.",
+      "#$b# is missing from the translation. It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended.",
       "The portrait $s is missing from the translation: the character shows a different face. Fine if intended.",
     ]);
   });
