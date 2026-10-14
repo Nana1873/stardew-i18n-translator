@@ -24,15 +24,24 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   string is exported: a dropped or added `#$b#` (the game moves long text into
   extra boxes itself), a missing value token such as `[FarmName]` or
   `[ItemName …]` (only its value is lost), an added `[FarmName]` or
-  `[ArticleFor …]`, a repeated `{0}`, a dropped single `{`, a `*` in a `$y`
-  reply, a `#$k#` page, an added or dropped `||` weekly split, a letter
-  without its `[#]` title, and dialogue syntax inside a letter. An `%item`
-  that only differs in spacing or the item type's case is no longer a
+  `[ArticleFor …]`, a repeated `{0}` or an extra copy of a `{{placeholder}}`
+  the English text uses, a dropped single `{` (or an added one when the
+  English text has no `{0}`-style placeholders), a `*` in a `$y` reply, a
+  `#$k#` page, an added or dropped `||` weekly split, a missing `$command`
+  inside a line (the game shows it as text in the English line too), a
+  missing `${` or `}$` that was already broken in the English text, a letter
+  without its `[#]` title, and missing dialogue syntax inside a letter. An
+  `%item` that only differs in spacing or the item type's case is no longer a
   difference.
+- Every explanation was checked against the game code again. Several now
+  say what really happens: a bare `#` or `#$e#` ends the conversation and the
+  rest shows next time, a broken `$y` separator makes the whole dialogue
+  "...", and the two-portraits error only goes to the token that causes it.
 - These still block, and some are new: a `#$b#` replaced by `#`, which ends
   the conversation there; any page change in a string with `$1`, `$c`, or
-  `$d`, which count pages; a changed `|` in a `$d` dialogue; an empty `[]`,
-  which the game cannot read; a `{1}` above the English placeholders; and a
+  `$d` (when its versions are split by `#`), which count pages; a changed `|`
+  in a `$d` dialogue; an added empty `[]`, which the game cannot read; new
+  dialogue syntax or bracket tokens in a letter, which show as text there; a `{1}` above the English placeholders; and a
   value token whose key, name, or item ID was translated, such as
   `[LocalizedText Strings\Tools:Axe]` turned into
   `[LocalizedText Strings\Werkzeuge:Axt]`, which the game shows as raw text.

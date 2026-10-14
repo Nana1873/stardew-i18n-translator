@@ -26,6 +26,7 @@ import {
   bracketKey,
   countsPages,
   isTextBracket,
+  pageStartCommands,
   pagesWithMultiplePortraits,
   picksVersion,
   positionalIndex,
@@ -381,6 +382,7 @@ function textDifferences(
     sourceBracketKeys: new Set(
       [...sourceTokens.keys()].filter(isTextBracket).map(bracketKey),
     ),
+    sourcePageCommands: pageStartCommands(source),
   };
   const differences: TokenDifference[] = [];
   const addDifference = (

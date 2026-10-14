@@ -164,11 +164,11 @@ describe("validate", () => {
     ]);
   });
 
-  it("catches a dropped second $b via multiset comparison", () => {
-    const issues = validate("a$b b$b c", "a$b b c");
+  it("catches a dropped second $k via multiset comparison", () => {
+    const issues = validate("a$k b$k c", "a$k b c");
     expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
     expect(issues[0].message).toBe(
-      "$b appears 1 time in the translation instead of 2. The game would show it as text or change the dialogue flow.",
+      "$k appears 1 time in the translation instead of 2. The game would show it as text or change the dialogue flow.",
     );
   });
 
@@ -263,7 +263,7 @@ describe("validate", () => {
       .map((issue) => issue.message)
       .sort();
     expect(notes).toEqual([
-      "# is missing from the translation. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.",
+      "# is missing from the translation. In dialogue, # ends the conversation there and the rest shows the next time the player talks to the character; elsewhere it is plain text. Fine if intended.",
       "^ appears 1 time in the translation instead of 2. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
     ]);
     expect(issues.every((issue) => issue.severity === "warning")).toBe(true);

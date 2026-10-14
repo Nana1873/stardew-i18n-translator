@@ -247,10 +247,37 @@ export interface SeverityContext {
   letter: boolean;
   /** The `bracketKey` of every bracket token in the English text. */
   sourceBracketKeys: Set<string>;
+  /** The `$command` words that start a page of the English text. */
+  sourcePageCommands: Set<string>;
 }
 
 export function positionalIndex(token: string): number | null {
   return /^\{\d+\}$/.test(token) ? Number(token.slice(1, -1)) : null;
+}
+
+/** Tokens a letter would show as raw text if a translation added them:
+ * dialogue commands, `%` placeholders and event commands, and bracket
+ * tokens. Mirrors Rust `shows_as_text_in_letter`. */
+function showsAsTextInLetter(token: string): boolean {
+  return (
+    token.startsWith("$") ||
+    token.startsWith("#$") ||
+    token.startsWith("%") ||
+    token.startsWith("[")
+  );
+}
+
+/** Tokens whose explanation stays the same in a letter. Mirrors Rust
+ * `keeps_meaning_in_letter`. */
+export function keepsMeaningInLetter(token: string): boolean {
+  return (
+    actsInLetter(token) ||
+    token === "@" ||
+    token === "^" ||
+    token === "#" ||
+    token === "[#]" ||
+    isGenderSwitchShape(token)
+  );
 }
 
 /** Tokens that still act in a letter: rewards, actions, he/she switches, and
@@ -279,7 +306,12 @@ export function tokenSeverity(
   context: SeverityContext,
 ): TokenSeverity {
   const dropped = targetCount < sourceCount;
-  if (context.letter && !actsInLetter(token)) return "warning";
+  // A letter does not read dialogue commands, placeholders, or bracket tokens
+  // (`LetterViewerMenu`): a missing one is harmless, a new one shows as text.
+  if (context.letter && !actsInLetter(token))
+    return dropped || sourceCount > 0 || !showsAsTextInLetter(token)
+      ? "warning"
+      : "error";
   // `$1`, `$c`, and `$d` count pages, so any page change shows another line.
   if (context.pagesCounted && isPageToken(token)) return "error";
   const { introducesMultiplePortraits, maxPositional } = context;
@@ -293,23 +325,36 @@ export function tokenSeverity(
     // A bare `^` or `#` changes the page or gender split in dialogue but is
     // plain text in letters and UI strings; translators decide (PD-1), unless
     // the change puts two different portraits on one page.
-    ((token === "^" || token === "#") && !introducesMultiplePortraits) ||
-    (isPortraitCommand(token) && !introducesMultiplePortraits) ||
+    // Only a removed `^` or `#` or an added portrait can put two portraits on
+    // one page.
+    ((token === "^" || token === "#") &&
+      !(introducesMultiplePortraits && dropped)) ||
+    (isPortraitCommand(token) && (dropped || !introducesMultiplePortraits)) ||
+    // A `${` or `}$` the English text has is broken there already.
+    (dropped && (token === "${" || token === "}$")) ||
+    // A `$command` inside a line is not read, so the English text shows it as
+    // text already (`Dialogue.parseDialogueString`); `$k` is.
+    (dropped &&
+      /^\$[A-Za-z0-9]+$/.test(token) &&
+      token !== "$k" &&
+      !isPortraitCommand(token) &&
+      !context.sourcePageCommands.has(token)) ||
     // A missing placeholder only drops its value. A renamed or extra
     // `{{...}}` stays literal, and in dialogue its `}` hides the text before
     // it; a `{n}` above the English ones makes string.Format throw.
-    (dropped && isPlaceholder(token)) ||
+    // SMAPI fills every copy of a `{{key}}` the English text uses.
+    (isPlaceholder(token) && (dropped || sourceCount > 0)) ||
     (index !== null && maxPositional !== null && index <= maxPositional) ||
     isSkippedPage(token) ||
     // Without `#$b#` the game moves long text into extra boxes itself; a
     // bare `#` in its place ends the conversation early.
     (token === "#$b#" && !(dropped && context.addsPageBreaks)) ||
-    isMalformedBreak(token) ||
+    (isMalformedBreak(token) && (dropped || sourceCount > 0)) ||
     // A `*` in a `$y` reply becomes `#$b#` (Dialogue.cs).
     token === "*" ||
     // A lone `{` in the English text cannot be a format item, and in
     // dialogue it only keeps the conversation going.
-    (dropped && token === "{") ||
+    (token === "{" && (dropped || maxPositional === null)) ||
     (dropped && token === "[#]") ||
     // `||` only changes which text shows in which week (Dialogue.cs).
     token === "||" ||
@@ -343,14 +388,29 @@ export function isSkippedPage(token: string): boolean {
  * rest at `|` or `#`, so every page counts, an empty `$e` one included.
  * Mirrors Rust `counts_pages`. */
 export function countsPages(value: string): boolean {
+  const hash = value.indexOf("#");
+  const versionsByPipe = hash >= 0 && value.slice(hash + 1).includes("|");
   return value
     .split("#")
     .some(
       (page) =>
         page.startsWith("$1 ") ||
         page.startsWith("$c ") ||
-        page.startsWith("$d "),
+        (page.startsWith("$d ") && !versionsByPipe),
     );
+}
+
+/** The `$command` words that start a page of `value`. A command anywhere
+ * else in a line is not read (`Dialogue.parseDialogueString` only checks a
+ * page's start), except portraits and `$k`. Mirrors Rust
+ * `page_start_commands`. */
+export function pageStartCommands(value: string): Set<string> {
+  const commands = new Set<string>();
+  for (const page of value.split("#")) {
+    const word = /^\$[A-Za-z0-9]+/.exec(page);
+    if (word) commands.add(word[0]);
+  }
+  return commands;
 }
 
 /** A `$1`, `$c`, or `$d` command token, at the start of the string or after

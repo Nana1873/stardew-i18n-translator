@@ -4,6 +4,7 @@ import {
   isMalformedBreak,
   isPageCountingCommand,
   isPageToken,
+  keepsMeaningInLetter,
   isPercentPlaceholder,
   isSkippedPage,
   isLetterFormat,
@@ -76,7 +77,8 @@ const PERCENT_PLACEHOLDER_TEXT: Partial<Record<string, string>> = {
   "%kid1": "The game puts the first child's name here.",
   "%kid2": "The game puts the second child's name here.",
   "%season": "The game puts the current season here.",
-  "%noturn": "It keeps the character from turning to face the player.",
+  "%noturn":
+    "At a festival it keeps the character from turning to face the player.",
 };
 
 function delta(differences: TokenDifference[], token: string) {
@@ -145,7 +147,7 @@ function dialogueCommandConsequence(token: string): string | null {
   if (/^#\$b[#$*]/.test(token))
     return "It starts a new dialogue box, so the text would be split into boxes differently.";
   if (isSkippedPage(token))
-    return "The game skips this command, so the dialogue plays the same. Fine if intended.";
+    return "The game shows nothing for it, but like a bare # it ends the conversation there and the rest shows the next time. Fine if intended.";
   if (
     token.startsWith("#$action") ||
     ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
@@ -161,10 +163,12 @@ function caseVariantMessage(
   token: string,
   partner: TokenDifference | undefined,
   error: boolean,
+  letter: boolean,
 ): string {
   const text = `${token} is not a dialogue command the game knows, so it would show as text.`;
   // Only a letter, where dialogue commands are plain text anyway.
   if (!error) return `${text} Fine if intended.`;
+  if (letter) return text;
   if (!partner) return text;
   // `#$e#` itself does nothing, so its purpose would only confuse here.
   const purpose = isSkippedPage(partner.token)
@@ -192,6 +196,7 @@ function hasWarningText(token: string): boolean {
   return (
     isSkippedPage(token) ||
     isMalformedBreak(token) ||
+    (token.startsWith("$") && !isPortraitCommand(token)) ||
     token === "#$b#" ||
     token === "||" ||
     isLetterFormat(token) ||
@@ -205,19 +210,41 @@ function hasWarningText(token: string): boolean {
   );
 }
 
+/** What the explanation knows about the whole translation. Mirrors Rust
+ * `ExplainContext`. */
+export interface ExplainContext {
+  /** `$1`, `$c`, or `$d` count the dialogue pages. */
+  pagesCounted: boolean;
+  /** A letter with a `[#]` title (`LetterViewerMenu`). */
+  letter: boolean;
+  /** The translation has a he/she switch. */
+  translationHasSwitch: boolean;
+}
+
+const NO_CONTEXT: ExplainContext = {
+  pagesCounted: false,
+  letter: false,
+  translationHasSwitch: false,
+};
+
 /** What a token difference does in the game, as one sentence. Errors name
  * the consequence; warnings end with "Fine if intended." Mirrors Rust
  * `tokens::token_consequence` word for word. */
 export function tokenConsequence(
   difference: TokenDifference,
-  pagesCounted = false,
+  context: ExplainContext = NO_CONTEXT,
 ): string {
   const { token, sourceCount, targetCount, severity } = difference;
   const missing = targetCount < sourceCount;
+  const { pagesCounted } = context;
   if (token === "${" || token === "}$")
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
-      : "Fine if intended.";
+      : "The English text has a broken he/she switch here; without it the text shows correctly. Fine if intended.";
+  if (context.letter && !keepsMeaningInLetter(token))
+    return severity === "error"
+      ? "In a letter the game does not read it, so it shows as text."
+      : "In a letter the game shows it as plain text. Fine if intended.";
   if (severity !== "error" && !hasWarningText(token))
     return "In a letter the game shows it as plain text. Fine if intended.";
   if (token === "|" && severity === "error")
@@ -228,6 +255,8 @@ export function tokenConsequence(
     return severity === "error"
       ? "A # took its place, which ends the conversation there: the rest shows only the next time the player talks to the character, or never in an event."
       : "It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended.";
+  if (isMalformedBreak(token) && severity === "error")
+    return "The game does not read it as a command, so it would show as text.";
   if (isMalformedBreak(token))
     return "The game does not read it as a command and shows it as text, as in the English text. Fine if intended.";
   if (token === "||")
@@ -235,7 +264,7 @@ export function tokenConsequence(
   if (isEmptyBracket(token))
     return missing
       ? "The game could not read it in the English text either. Fine if intended."
-      : 'The game cannot read an empty [], so the dialogue shows only "..." or the letter cannot be opened.';
+      : 'The game cannot read an empty []: dialogue shows only "..." and a Mail Framework Mod letter cannot be opened.';
   const command = dialogueCommandConsequence(token);
   if (command !== null && (severity === "error" || isSkippedPage(token)))
     return command;
@@ -248,17 +277,21 @@ export function tokenConsequence(
   if (token === "*")
     return "In a quick-question reply it starts a new dialogue box. Fine if intended.";
   if (token === "_")
-    return "It separates the question, answers, and replies of a quick question; without it the game mixes them up.";
+    return 'It separates the question, answers, and replies of a quick question; with a different count the game cannot read the dialogue and shows only "...".';
   if (token === "[#]" && !missing && severity !== "error")
     return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
   if (token === "[#]")
     return missing
       ? "The letter title would show at the end of the letter text. Fine if intended."
       : "Text after it would become the letter title.";
-  if (token === "%fork" || token.startsWith("%revealtaste"))
+  if (token === "%fork")
     return missing
-      ? "The event choice or gift-taste reveal would not happen."
-      : "It adds event behavior the English text does not have.";
+      ? "The event choice would not happen."
+      : "It adds an event choice the English text does not have.";
+  if (token.startsWith("%revealtaste"))
+    return missing
+      ? "The gift-taste reveal would not happen."
+      : "It reveals a gift taste the English text does not.";
   const percent = PERCENT_PLACEHOLDER_TEXT[token];
   if (percent) return `${percent} Fine if intended.`;
   if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
@@ -272,7 +305,7 @@ export function tokenConsequence(
   }
   if (token.toLowerCase().startsWith("[articlefor"))
     return missing
-      ? "Only the a/an article is lost. Fine if intended."
+      ? "Other languages have no a/an article here anyway. Fine if intended."
       : "The game puts no article here in other languages. Fine if intended.";
   if (isLetterFormat(token) && severity === "error")
     return "The game does not recognize this command, so it shows as text in the letter. Write the command word in lowercase and the background as a number, like in the English text.";
@@ -291,7 +324,9 @@ export function tokenConsequence(
       ? "The game would not give this item."
       : "It adds an item the English text does not give.";
   if (token.startsWith("$") && !isPortraitCommand(token))
-    return "The game would show it as text or change the dialogue flow.";
+    return severity === "error"
+      ? "The game would show it as text or change the dialogue flow."
+      : "The game does not read it here and shows it as text in the English line too. Fine if intended.";
   return "The game would show it as raw text or misread the line.";
 }
 
@@ -309,13 +344,17 @@ function changePhrase(sourceCount: number, targetCount: number): string {
 
 function genericMessage(
   difference: TokenDifference,
-  pagesCounted: boolean,
+  context: ExplainContext,
 ): string {
   const { token, sourceCount, targetCount, severity } = difference;
   const missing = targetCount < sourceCount;
   const change = changePhrase(sourceCount, targetCount);
+  const { pagesCounted } = context;
+  // In a letter only these keep their dialogue meaning.
+  if (context.letter && !keepsMeaningInLetter(token))
+    return `${token} ${change}. ${tokenConsequence(difference, context)}`;
   if (isGenderSwitchShape(token))
-    return missing
+    return missing && !context.translationHasSwitch
       ? "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
       : "The he/she switches differ from the English text. Fine if intended.";
   if (isPortraitCommand(token))
@@ -329,17 +368,20 @@ function genericMessage(
     return `${token} ${change}: one dialogue box now has two different portraits, so the second shows as raw text.`;
   if (token === "^")
     return `^ ${change}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
+  if (token === "}" && severity === "error" && missing)
+    return `A single } ${change}. The game would show the text before it and no longer set the flag that text names.`;
   if (token === "}" && severity === "error")
     return `A single } ${change}. The game turns the text before it into a hidden flag, so that text disappears.`;
   if (token === "{" && severity === "error")
     return `A single { ${change}. Mods that fill in values such as {0} would fail on it, and dialogue reads it as a command.`;
   if (token === "{" && missing)
     return `A single { ${change}. In dialogue it keeps the conversation going into the next box. Fine if intended.`;
-  if (token === "{" || token === "}")
-    return `A single ${token} ${change}. Fine if intended.`;
+  if (token === "{")
+    return `A single { ${change}. In dialogue it joins the next box to this one. Fine if intended.`;
+  if (token === "}") return `A single } ${change}. Fine if intended.`;
   if (token === "#")
-    return `# ${change}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.`;
-  return `${token} ${change}. ${tokenConsequence(difference, pagesCounted)}`;
+    return `# ${change}. In dialogue, # ends the conversation there and the rest shows the next time the player talks to the character; elsewhere it is plain text. Fine if intended.`;
+  return `${token} ${change}. ${tokenConsequence(difference, context)}`;
 }
 
 /**
@@ -357,6 +399,18 @@ export function describeTokenIssue(
   const pagesCounted =
     countsPages(translation) ||
     differences.some((difference) => isPageCountingCommand(difference.token));
+  const titleError = differences.some(
+    (difference) =>
+      difference.token === "[#]" && difference.severity === "error",
+  );
+  const context: ExplainContext = {
+    pagesCounted,
+    letter:
+      !titleError &&
+      (translation.includes("[#]") ||
+        differences.some((difference) => difference.token === "[#]")),
+    translationHasSwitch: translation.includes("${"),
+  };
   const extraOpeners = delta(differences, "${");
   const extraClosers = delta(differences, "}$");
   const switchDamaged = extraOpeners > 0 || extraClosers > 0;
@@ -401,7 +455,7 @@ export function describeTokenIssue(
       messages.push({
         severity: error ? "error" : "warning",
         kind: "added",
-        message: caseVariantMessage(token, partner, error),
+        message: caseVariantMessage(token, partner, error, context.letter),
         token,
       });
       continue;
@@ -418,7 +472,7 @@ export function describeTokenIssue(
       severity: difference.severity,
       kind:
         difference.targetCount < difference.sourceCount ? "missing" : "added",
-      message: genericMessage(difference, pagesCounted),
+      message: genericMessage(difference, context),
       token,
     });
   }
