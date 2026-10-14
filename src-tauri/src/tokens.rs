@@ -545,6 +545,7 @@ fn has_warning_text(token: &str) -> bool {
     is_skipped_page(token)
         || is_malformed_break(token)
         || matches!(token, "#$b#" | "*" | "[#]" | "||")
+        || is_letter_format(token)
         || percent_placeholder_text(token).is_some()
         || is_placeholder(token)
         || is_text_bracket(token)
@@ -586,7 +587,20 @@ fn is_logic_bracket(token: &str) -> bool {
 }
 
 fn is_text_bracket(token: &str) -> bool {
-    token.starts_with('[') && !is_logic_bracket(token) && !is_empty_bracket(token)
+    token.starts_with('[')
+        && !is_logic_bracket(token)
+        && !is_empty_bracket(token)
+        && !is_letter_format(token)
+}
+
+/// `[letterbg …]` and `[textcolor …]` set a letter's background and text
+/// color (`LetterViewerMenu.ApplyCustomFormatting`). A missing one or an
+/// unknown color only changes the look; a misspelled command word or a
+/// background that is no number stays visible as text. Mirrors TS
+/// `isLetterFormat`.
+fn is_letter_format(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    lower.starts_with("[letterbg ") || lower.starts_with("[textcolor ")
 }
 
 /// Bracket tokens `TokenParser` always resolves: built-in values without
@@ -820,6 +834,13 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
             "The game puts no article here in other languages. Fine if intended."
         };
     }
+    if is_letter_format(token) {
+        return if missing {
+            "The letter uses its default background or text color. Fine if intended."
+        } else {
+            "It sets the letter's background or text color; if it is not written like in the English text, the letter may show it as text. Fine if intended."
+        };
+    }
     if is_text_bracket(token) {
         return if missing {
             "The game would not insert this value. Fine if intended."
@@ -1005,6 +1026,7 @@ fn token_severity(
         || token == "||"
         // An empty `[]` already fails in the English text.
         || (dropped && is_empty_bracket(token))
+        || is_letter_format(token)
         // A missing value token only drops its value. A new one that is not
         // in the English text may not resolve and then shows as raw text.
         || (is_text_bracket(token)
@@ -1753,6 +1775,10 @@ fn is_protected_bracket_body(body: &str) -> bool {
         "dayofmonth" | "farmeruniqueid" | "farmname" | "season" | "positiveadjective" => {
             arguments.is_empty()
         }
+
+        // Letter formatting (`LetterViewerMenu.ApplyCustomFormatting`).
+        "letterbg" => has_atomic_argument_count(arguments, 1, 2),
+        "textcolor" => has_atomic_argument_count(arguments, 1, 1),
 
         // Built-in ID/key/control-value forms whose arguments aren't visible
         // prose. Keep the accepted arities intentionally narrow.

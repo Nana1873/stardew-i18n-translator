@@ -6,6 +6,7 @@ import {
   isPageToken,
   isPercentPlaceholder,
   isSkippedPage,
+  isLetterFormat,
   isTextBracket,
   isGenderSwitchShape,
   isPortraitCommand,
@@ -193,6 +194,7 @@ function hasWarningText(token: string): boolean {
     isMalformedBreak(token) ||
     token === "#$b#" ||
     token === "||" ||
+    isLetterFormat(token) ||
     token === "*" ||
     token === "[#]" ||
     isPercentPlaceholder(token) ||
@@ -272,6 +274,10 @@ export function tokenConsequence(
     return missing
       ? "Only the a/an article is lost. Fine if intended."
       : "The game puts no article here in other languages. Fine if intended.";
+  if (isLetterFormat(token))
+    return missing
+      ? "The letter uses its default background or text color. Fine if intended."
+      : "It sets the letter's background or text color; if it is not written like in the English text, the letter may show it as text. Fine if intended.";
   if (isTextBracket(token))
     return missing
       ? "The game would not insert this value. Fine if intended."

@@ -1063,6 +1063,24 @@
       "source": "Welcome!",
       "target": "Willkommen! [SuggestedItem]",
       "blocked": true
+    },
+    {
+      "name": "a dropped letter background is a note",
+      "source": "[letterbg 2]Dear @,^Thanks![#]T",
+      "target": "Liebe @,^Danke![#]T",
+      "blocked": false
+    },
+    {
+      "name": "a translated text color is a note",
+      "source": "[textcolor red]Warning![#]T",
+      "target": "[textcolor rot]Warnung![#]T",
+      "blocked": false
+    },
+    {
+      "name": "letter formatting outside a letter is a note",
+      "source": "[textcolor blue]Hello",
+      "target": "Hallo",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -1410,6 +1428,11 @@
       "source": "[CharacterName Wizard] says hi.",
       "target": "[CharacterName Zauberer] sagt hallo.",
       "text": "[CharacterName Wizard] is missing from the translation. The game would not insert this value. Fine if intended. [CharacterName Zauberer] is not in the English text. If the game cannot resolve it, for example because its name or key was translated, players see it as raw text."
+    },
+    {
+      "source": "[textcolor blue]Hello",
+      "target": "Hallo",
+      "text": "[textcolor blue] is missing from the translation. The letter uses its default background or text color. Fine if intended."
     }
   ]
 }

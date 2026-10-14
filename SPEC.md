@@ -163,7 +163,8 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   one), a dropped placeholder, a repeated `{n}`, a missing value token such as
   `[FarmName]` or `[ItemName …]`, an extra copy of one in the English text, an
   added built-in value without arguments such as `[FarmName]` or `[Season]`, an
-  added `[ArticleFor …]`, a dropped or added `#$b#`
+  added `[ArticleFor …]`, a changed letter background or text color
+  (`[letterbg …]`, `[textcolor …]`), a dropped or added `#$b#`
   (the game moves long text into extra boxes itself), a `*` in a `$y` reply,
   `#$e#` and a `#$k#` page (the game skips both), a changed `||` weekly split, a dropped single `{`, and a
   changed bare `^` or `#` that does not put two different portraits on one

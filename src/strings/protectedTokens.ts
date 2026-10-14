@@ -314,6 +314,7 @@ export function tokenSeverity(
     token === "||" ||
     // An empty `[]` already fails in the English text.
     (dropped && isEmptyBracket(token)) ||
+    isLetterFormat(token) ||
     // A missing value token only drops its value. A new one that is not in
     // the English text may not resolve and then shows as raw text.
     (isTextBracket(token) &&
@@ -405,8 +406,21 @@ function isLogicBracket(token: string): boolean {
 
 export function isTextBracket(token: string): boolean {
   return (
-    token.startsWith("[") && !isLogicBracket(token) && !isEmptyBracket(token)
+    token.startsWith("[") &&
+    !isLogicBracket(token) &&
+    !isEmptyBracket(token) &&
+    !isLetterFormat(token)
   );
+}
+
+/** `[letterbg …]` and `[textcolor …]` set a letter's background and text
+ * color (`LetterViewerMenu.ApplyCustomFormatting`). A missing one or an
+ * unknown color only changes the look; a misspelled command word or a
+ * background that is no number stays visible as text. Mirrors Rust
+ * `is_letter_format`. */
+export function isLetterFormat(token: string): boolean {
+  const lower = token.toLowerCase();
+  return lower.startsWith("[letterbg ") || lower.startsWith("[textcolor ");
 }
 
 const ALWAYS_RESOLVING_TOKENS = new Set([
@@ -857,6 +871,11 @@ function isProtectedBracketBody(body: string): boolean {
 
   if (argumentlessBracketTokens.has(normalizedName))
     return argumentText.length === 0;
+  // Letter formatting (`LetterViewerMenu.ApplyCustomFormatting`).
+  if (normalizedName === "letterbg")
+    return hasAtomicArgumentCount(argumentText, 1, 2);
+  if (normalizedName === "textcolor")
+    return hasAtomicArgumentCount(argumentText, 1, 1);
   if (
     [
       "farmerstat",

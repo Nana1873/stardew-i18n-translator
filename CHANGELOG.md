@@ -42,6 +42,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   halved the lost values for about 5% more requests. Other notes still never
   cost a retry. A ChatGPT review or repair that loses such a value is not
   applied, unless it removes a token error.
+- Letter background and text color commands (`[letterbg …]`,
+  `[textcolor …]`) are checked too, as notes: a missing one or a translated
+  color only changes the look, but a changed command word would show as text
+  in the letter.
 - A missing or extra `#$e#` is a note instead of a token error, so the string
   is exported. Stardew Valley 1.6 skips this command; the old explanation that
   it ends the conversation was wrong. After a `$1` or `$c` command it still
