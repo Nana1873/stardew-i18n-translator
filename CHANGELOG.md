@@ -79,6 +79,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   lacks the language and no language pack is installed. Building the glossary
   now removes that old file.
 
+### Security
+
+- The TLS library rustls is updated to 0.23.46, which fixes four published
+  advisories (RUSTSEC-2026-0346 to 0349) for the connections to OpenAI.
+
 ## [2.5.0] - 2026-10-13
 
 ### Changed
