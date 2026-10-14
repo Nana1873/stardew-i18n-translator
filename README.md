@@ -104,7 +104,7 @@ moving the app.** See [updates and backups](docs/troubleshooting.md#updating-and
 AI is optional, and none of it runs until you choose it. You can use a local
 model (LM Studio or Ollama, on your computer only), your ChatGPT plan through a
 browser sign-in (no API key or extra tools), or an LLM batch file you hand to
-any other tool; imported batches are checked for outdated text, wrong keys, and
+any other tool. Imported batches are checked for outdated text, wrong keys, and
 tokens, and never overwrite translations you already have. Every AI result
 lands in **Review** and is never marked Done on its own. Export still includes
 Review text, so look it over first. The [AI guide](docs/ai.md) covers setup,
