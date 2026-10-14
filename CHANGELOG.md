@@ -24,13 +24,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   string is exported: a dropped or added `#$b#` (the game moves long text into
   extra boxes itself), value tokens such as `[FarmName]` or `[ItemName …]`
   (an unknown one shows as text), an added `[ArticleFor …]`, a repeated `{0}`,
-  a dropped single `{`, a `*` in a `$y` reply, a `#$k#` page, a letter without
+  a dropped single `{`, a `*` in a `$y` reply, a `#$k#` page, an added or dropped `||` weekly
+  split, a letter without
   its `[#]` title, and dialogue syntax inside a letter. An `%item` that only
   differs in spacing or the item type's case is no longer a difference.
 - These still block, and some are new: a `#$b#` replaced by `#`, which ends
   the conversation there; any page change in a string with `$1`, `$c`, or
-  `$d`, which count pages; a changed `|` in a `$d` dialogue or `||` weekly
-  split; an empty `[]`, which the game cannot read; and a `{1}` above the
+  `$d`, which count pages; a changed `|` in a `$d` dialogue; an empty `[]`, which the game cannot read; and a `{1}` above the
   English placeholders. AI translation retries only for these errors, as
   before.
 - A missing or extra `#$e#` is a note instead of a token error, so the string

@@ -909,10 +909,10 @@
       "blocked": true
     },
     {
-      "name": "an added || still blocks",
+      "name": "an added || only changes the text per week",
       "source": "Hello!",
       "target": "Hallo!||Servus!",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "a dropped [FarmName] is a note",

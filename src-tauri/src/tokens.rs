@@ -519,7 +519,7 @@ fn picks_version(value: &str) -> bool {
 fn has_warning_text(token: &str) -> bool {
     is_skipped_page(token)
         || is_malformed_break(token)
-        || matches!(token, "#$b#" | "*" | "[#]")
+        || matches!(token, "#$b#" | "*" | "[#]" | "||")
         || percent_placeholder_text(token).is_some()
         || is_placeholder(token)
         || is_text_bracket(token)
@@ -606,6 +606,9 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
     if !difference.is_error() && !has_warning_text(token) {
         return "In a letter the game shows it as plain text. Fine if intended.";
     }
+    if token == "|" && difference.is_error() {
+        return "In a $d dialogue it separates the two versions, so the game would show the wrong one or only \"...\".";
+    }
     if is_page_token(token) && difference.is_error() && pages_counted {
         return "A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show.";
     }
@@ -619,11 +622,8 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
     if is_malformed_break(token) {
         return "The game does not read it as a command and shows it as text, as in the English text. Fine if intended.";
     }
-    if token == "|" {
-        return "In a $d dialogue it separates the two versions, so the game would show the wrong one or only \"...\".";
-    }
     if token == "||" {
-        return "It splits the dialogue into versions that change every week, so players would see the wrong text.";
+        return "In dialogue it splits the text into versions that change every week; elsewhere it is plain text. Fine if intended.";
     }
     if is_empty_bracket(token) {
         return if missing {
@@ -870,6 +870,8 @@ fn token_severity(
         // dialogue it only keeps the conversation going.
         || (dropped && token == "{")
         || (dropped && token == MAIL_TITLE)
+        // `||` only changes which text shows in which week (Dialogue.cs).
+        || token == "||"
         // An empty `[]` already fails in the English text.
         || (dropped && is_empty_bracket(token))
         || is_text_bracket(token);

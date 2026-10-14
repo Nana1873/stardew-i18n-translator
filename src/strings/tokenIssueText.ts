@@ -192,6 +192,7 @@ function hasWarningText(token: string): boolean {
     isSkippedPage(token) ||
     isMalformedBreak(token) ||
     token === "#$b#" ||
+    token === "||" ||
     token === "*" ||
     token === "[#]" ||
     isPercentPlaceholder(token) ||
@@ -217,6 +218,8 @@ export function tokenConsequence(
       : "Fine if intended.";
   if (severity !== "error" && !hasWarningText(token))
     return "In a letter the game shows it as plain text. Fine if intended.";
+  if (token === "|" && severity === "error")
+    return 'In a $d dialogue it separates the two versions, so the game would show the wrong one or only "...".';
   if (isPageToken(token) && severity === "error" && pagesCounted)
     return "A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show.";
   if (token === "#$b#")
@@ -225,10 +228,8 @@ export function tokenConsequence(
       : "It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended.";
   if (isMalformedBreak(token))
     return "The game does not read it as a command and shows it as text, as in the English text. Fine if intended.";
-  if (token === "|")
-    return 'In a $d dialogue it separates the two versions, so the game would show the wrong one or only "...".';
   if (token === "||")
-    return "It splits the dialogue into versions that change every week, so players would see the wrong text.";
+    return "In dialogue it splits the text into versions that change every week; elsewhere it is plain text. Fine if intended.";
   if (isEmptyBracket(token))
     return missing
       ? "The game could not read it in the English text either. Fine if intended."

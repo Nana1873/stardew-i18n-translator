@@ -136,7 +136,7 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   switch inside a switch, which the game does not nest), a `#$b#` replaced by
   a bare `#` (the conversation ends there), any page change (`#`, `#$b#`,
   `#$e#`, `#$k#`) in a string with `$1`, `$c`, or `$d`, which count pages, a
-  changed `|` in a `$d` dialogue, a changed `||` weekly split, dialogue
+  changed `|` in a `$d` dialogue, dialogue
   commands such as `$q`, `$r`, `$y`, `$p`, `$d`, `$c`, an inline `$k`,
   `$action`, event commands `%fork` and `%revealtaste`, the arguments of a
   command that opens the string (such as `$q 305/306 null#` or the one-time
@@ -160,7 +160,7 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   `[FarmName]`, `[ItemName …]`, or `[ArticleFor …]` (missing, added, or
   renamed; an unknown one stays visible as text), a dropped or added `#$b#`
   (the game moves long text into extra boxes itself), a `*` in a `$y` reply,
-  `#$e#` and a `#$k#` page (the game skips both), a dropped single `{`, and a
+  `#$e#` and a `#$k#` page (the game skips both), a changed `||` weekly split, a dropped single `{`, and a
   changed bare `^` or `#` that does not put two different portraits on one
   page or detach a `$y` quick response. Those two split pages and genders in
   dialogue but are plain text in letters (`^` is a line break) and UI strings,

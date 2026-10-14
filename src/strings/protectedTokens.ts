@@ -308,6 +308,8 @@ export function tokenSeverity(
     // dialogue it only keeps the conversation going.
     (dropped && token === "{") ||
     (dropped && token === "[#]") ||
+    // `||` only changes which text shows in which week (Dialogue.cs).
+    token === "||" ||
     // An empty `[]` already fails in the English text.
     (dropped && isEmptyBracket(token)) ||
     isTextBracket(token);
