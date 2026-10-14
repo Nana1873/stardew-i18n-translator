@@ -81,8 +81,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Security
 
-- The TLS library rustls is updated to 0.23.46, which fixes four published
-  advisories (RUSTSEC-2026-0346 to 0349) for the connections to OpenAI.
+- The TLS library rustls, used for HTTPS connections such as the OpenAI
+  sign-in and API, is updated to 0.23.46, which fixes four published
+  advisories (RUSTSEC-2026-0346 to 0349).
 
 ## [2.5.0] - 2026-10-13
 
