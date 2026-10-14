@@ -787,6 +787,66 @@
       "source": "Hi.#$b#Bye.",
       "target": "Hallo.#$B#Tschuess.",
       "blocked": true
+    },
+    {
+      "name": "a missing #$e# changes nothing in the game",
+      "source": "Go.#$e#Later.",
+      "target": "Los. Später.",
+      "blocked": false
+    },
+    {
+      "name": "a trailing #$e# may be dropped",
+      "source": "Thanks!$1#$e#",
+      "target": "Danke!$1",
+      "blocked": false
+    },
+    {
+      "name": "a female letter version behind a second [#] is only a note",
+      "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
+      "target": "Lieber @,^Bitte schön.%item object 388 5 %%[#]Ein Geschenk¦Liebe @,^Bitte sehr.%item object 388 5 %%[#]Ein Geschenk",
+      "blocked": false
+    },
+    {
+      "name": "a letter split by ¦ is compared per player gender",
+      "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
+      "target": "Lieber @,^Bitte schön.%item object 388 5 %%¦Liebe @,^Bitte sehr.%item object 388 5 %%[#]Ein Geschenk",
+      "blocked": false
+    },
+    {
+      "name": "a letter version that loses its item still blocks",
+      "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
+      "target": "Lieber @,^Bitte schön.%item object 388 5 %%¦Liebe @,^Bitte sehr.[#]Ein Geschenk",
+      "blocked": true
+    },
+    {
+      "name": "a letter without its title still blocks",
+      "source": "Dear @,^Here you go.%item object 388 5 %%[#]A Gift",
+      "target": "Liebe @,^Bitte schön.%item object 388 5 %% Ein Geschenk",
+      "blocked": true
+    },
+    {
+      "name": "a #$e# counted by $1 still blocks",
+      "source": "$1 metHarvey#Nice.#$e#Again.",
+      "target": "$1 metHarvey#Schön.#Nochmal.",
+      "blocked": true
+    },
+    {
+      "name": "a #$e# counted by $c still blocks",
+      "source": "$c 0.5#Sunny.#Rainy.#$e#Bye.",
+      "target": "$c 0.5#Sonnig.#Regnerisch.#Tschüss.",
+      "blocked": true
+    },
+    {
+      "name": "an added #$e$ is not the $e command",
+      "source": "Go.#$b#Later.",
+      "target": "Los.#$e$Später.",
+      "blocked": true
+    },
+    {
+      "name": "a letter gender version that adds a placeholder still blocks",
+      "source": "Hi {0}![#]T",
+      "target": "Hallo!¦Hallo {0}{0}![#]T",
+      "blocked": true
     }
   ],
   "explanations": [
@@ -889,7 +949,7 @@
     {
       "source": "Go.#$e#Later.",
       "target": "Los. Später.",
-      "text": "#$e# is missing from the translation. It ends today's conversation and saves the rest for next time, so the dialogue would play out differently."
+      "text": "#$e# is missing from the translation. The game skips this command, so the dialogue plays the same. Fine if intended."
     },
     {
       "source": "Hi {0}!",
@@ -1074,7 +1134,7 @@
     {
       "source": "Go.#$e#Later.",
       "target": "Los.#$E#Später.",
-      "text": "#$E# is not a dialogue command the game knows, so it would show as text. Did you mean #$e#? It ends today's conversation and saves the rest for next time, so the dialogue would play out differently."
+      "text": "#$E# is not a dialogue command the game knows, so it would show as text. Did you mean #$e#?"
     },
     {
       "source": "Hi.#$r 1 0 key#Yes.",

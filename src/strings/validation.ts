@@ -23,6 +23,7 @@ import {
   articleForArgument,
   branchText,
   extractProtectedTokens,
+  hasPageSkip,
   pagesWithMultiplePortraits,
   isGenderSwitchShape,
   tokenSeverity,
@@ -248,6 +249,81 @@ export function tokenDifferences(
   source: string,
   target: string,
 ): TokenDifference[] {
+  return mailDifferences(source, target) ?? textDifferences(source, target);
+}
+
+const MAIL_TITLE = "[#]";
+
+/**
+ * A letter: the game shows only the text before the first `[#]`, split into
+ * a male and a female version at its first bare `¦`, and the letter
+ * collection shows the text after it as the title, unprocessed
+ * (`LetterViewerMenu`, `CollectionsPage`; SDV 1.6). Text after a second
+ * `[#]` never appears. So for an English letter with one `[#]` only the
+ * letter text is compared, per player gender; a missing title stays an
+ * error and extra `[#]` are a note. Mirrors Rust `mail_differences`.
+ */
+function mailDifferences(
+  source: string,
+  target: string,
+): TokenDifference[] | null {
+  if (source.split(MAIL_TITLE).length - 1 !== 1) return null;
+  const targetTitles = target.split(MAIL_TITLE).length - 1;
+  if (targetTitles === 0) return null;
+  const sourceViews = genderViews(source.split(MAIL_TITLE)[0]);
+  const targetViews = genderViews(target.split(MAIL_TITLE)[0]);
+  const merged = new Map<string, TokenDifference>();
+  // Keep the worse gender view: an error first, then the larger gap.
+  const worse = (item: TokenDifference, known: TokenDifference) =>
+    item.severity !== known.severity
+      ? item.severity === "error"
+      : Math.abs(item.sourceCount - item.targetCount) >
+        Math.abs(known.sourceCount - known.targetCount);
+  for (
+    let index = 0;
+    index < Math.max(sourceViews.length, targetViews.length);
+    index += 1
+  ) {
+    const sourceView = sourceViews[Math.min(index, sourceViews.length - 1)];
+    const targetView = targetViews[Math.min(index, targetViews.length - 1)];
+    for (const difference of textDifferences(sourceView, targetView)) {
+      const known = merged.get(difference.token);
+      if (!known || worse(difference, known))
+        merged.set(difference.token, difference);
+    }
+  }
+  if (targetTitles > 1)
+    merged.set(MAIL_TITLE, {
+      token: MAIL_TITLE,
+      sourceCount: 1,
+      targetCount: targetTitles,
+      severity: "warning",
+    });
+  return [...merged.values()].sort((left, right) =>
+    compareCodePoints(left.token, right.token),
+  );
+}
+
+/** The male and female letter text: the game splits at the first `¦`
+ * outside a `${…}$` switch. A text without one reads the same for both.
+ * Mirrors Rust `gender_views`. */
+function genderViews(body: string): string[] {
+  let depth = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    if (body.startsWith("${", index)) {
+      depth += 1;
+      index += 1;
+    } else if (depth > 0 && body.startsWith("}$", index)) {
+      depth -= 1;
+      index += 1;
+    } else if (depth === 0 && body[index] === "¦") {
+      return [body.slice(0, index), body.slice(index + 1)];
+    }
+  }
+  return [body];
+}
+
+function textDifferences(source: string, target: string): TokenDifference[] {
   const { source: sourceTokens, target: targetTokens } = comparableTokenCounts(
     source,
     target,
@@ -257,6 +333,7 @@ export function tokenDifferences(
   );
   const introducesMultiplePortraits =
     pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
+  const pageSkip = hasPageSkip(source) || hasPageSkip(target);
   const differences: TokenDifference[] = [];
   const addDifference = (
     token: string,
@@ -272,6 +349,7 @@ export function tokenDifferences(
         sourceCount,
         targetCount,
         introducesMultiplePortraits,
+        pageSkip,
       ),
     });
   for (const [token, count] of sourceTokens) {
