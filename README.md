@@ -1,9 +1,14 @@
 # Stardew i18n Translator
 
-A portable Windows app for translating **Stardew Valley** SMAPI mods. Scan your
-Mods folder, edit the English text and your translation side by side, catch
-broken dialogue tokens while you type, and export clean translation files or a
-ZIP to share. No more working through large JSON files by hand.
+A portable Windows app for translating **Stardew Valley** SMAPI mods by hand:
+edit the English text and your language side by side, catch broken dialogue
+tokens like `$1` or `{{PlayerName}}` as you type, and export translation files
+or a ready-to-install ZIP. Free and open source.
+
+Why I made this: I wanted a way to translate mods without having to worry about
+mistyping or misreading a token somewhere. And for really big mods, say 3,000
+strings, you can let AI do a first pass and then check everything yourself in
+Review, so some of the work is taken off your hands.
 
 [Download the latest release](https://github.com/Nana1873/stardew-i18n-translator/releases/latest) ·
 [Nexus Mods](https://www.nexusmods.com/stardewvalley/mods/47653) ·
@@ -28,14 +33,14 @@ without an AI service._
 
 ## Features
 
-- **All your mods in one workspace**: multi-part mods are grouped, existing
-  translations are picked up, and every mod shows its coverage. Scanning only
-  reads your files.
-- **Search across all mods** by key, English text, or translation, combined
-  with the status filters Open, Changed, Review, and Done.
-- **Spot mod updates**: from the second complete scan on, the app reports
-  English strings that were added, changed, or removed. Translated strings
-  whose English text changed move to Changed.
+- All your mods in one workspace. Multi-part mods are grouped, existing
+  translations are picked up, and every mod shows how much is done. Scanning
+  only reads your files.
+- Search across all mods by key, English text, or translation, together with
+  the status filters Open, Changed, Review, and Done.
+- After a mod update, the next complete scan reports English strings that were
+  added, changed, or removed. Translated strings whose English text changed
+  move to Changed.
 - **Token-safe editing**: Stardew, SMAPI, Content Patcher, dialogue, mail,
   placeholder, and formatting tokens are listed for every string and checked as
   you type. Click a missing token to insert it. Harmless differences are only
@@ -44,22 +49,27 @@ without an AI service._
   difference.
 - **Issues view**: all token errors and warnings in the current mod scope in
   one list, explained in plain language.
-- **Glossary hints** from your local Stardew game strings or a supported
+- Glossary hints come from your local Stardew game strings or a supported
   community language pack, so item, place, and character names match the game.
-  Optional: translation and export work without a glossary.
-- **Batch work**: select rows with checkboxes, Ctrl+click, or Shift+click, then
-  translate with AI, export an LLM batch, keep the original, clear, or **Mark as done**.
-  The most recent batch edit can be undone during the session.
-- **Keyboard friendly**: Ctrl+F to search, Ctrl+Enter to save, and
-  Ctrl+Shift+Enter for Save & next. All shortcuts can be changed in
+  You don't need them to translate or export.
+- Batch work: select rows with the checkboxes, Ctrl+click, or Shift+click, then
+  mark them done, keep the original, clear them, or hand them to AI or an LLM
+  batch. The last batch edit can be undone during the session.
+- Keyboard shortcuts: Ctrl+F searches, Ctrl+Enter saves, and Ctrl+Shift+Enter
+  saves and opens the next string. You can change them in
   **Settings > Shortcuts**.
-- **Activity log** for scans, saves, imports, exports, and AI runs during the
+- An activity log lists the scans, saves, imports, exports, and AI runs of the
   session, with details for each result.
 - **Safe export**: existing target files receive a `.bak` backup, and an
   ordinary failure during a multi-file export rolls back the affected files.
-- **Translation ZIPs** for one mod or all scanned mods. They contain only the
-  generated translation files; install folders can be edited in the preview to
-  match the original mod.
+- Translation ZIPs hold one mod or all scanned mods, with only the translation
+  files inside. You can adjust the install folders in the preview to match the
+  original mod.
+
+The token checks follow the game itself: the rules were checked against
+Stardew Valley's own dialogue and mail code, Content Patcher, and Mail
+Framework Mod. A string is only held back when it would really break something
+in the game.
 
 Saving keeps your work in the app. Your mods change only when you export.
 Export can include text still in Review or Changed after a warning, so check
@@ -91,22 +101,11 @@ moving the app.** See [updates and backups](docs/troubleshooting.md#updating-and
 
 ## Optional AI
 
-AI is never required. Every AI result enters **Review** and is never marked
-Done automatically. Review does not block export, so check it before sharing.
-
-- **Local AI**: LM Studio or Ollama on your own computer (loopback endpoints
-  only).
-- **ChatGPT**: browser sign-in with your ChatGPT plan. No API key or CLI needed.
-  Four batches run in parallel by default (up to eight), with optional
-  quality checks.
-- **External LLM batch**: export the Open or Changed strings of one mod as a
-  JSON file, copy the handoff prompt, and give both to any LLM that can read and
-  return files. Imports are checked for stale sources, wrong keys, and
-  protected tokens, and never overwrite existing translations.
-
-For Local AI and ChatGPT, the instructions ask the model to keep each line's
-tone, humor, emotional intent, and character voice. Review the results before marking them Done. The
-[AI guide](docs/ai.md) covers setup, quality options, and exactly what is sent.
+AI is optional and stays off until you set it up: a local model (LM Studio or
+Ollama), your ChatGPT plan, or an LLM batch file you hand to any other tool.
+Every AI result lands in **Review** and is never marked Done on its own. Export
+still includes Review text, so look it over first. The [AI guide](docs/ai.md)
+covers setup, quality options, and exactly what is sent.
 
 ## Languages and files
 
@@ -125,10 +124,9 @@ tone, humor, emotional intent, and character voice. Review the results before ma
 Scanning, manual editing, glossary generation, validation, and export happen
 locally. The app has no accounts, analytics, or telemetry.
 
-Local AI sends translation text and context to your configured loopback
-service. ChatGPT sends them directly to OpenAI using browser sign-in and your
-ChatGPT plan; the native app encrypts its renewable session with Windows DPAPI.
-External batches leave your computer only when you upload them yourself.
+The optional AI features only send the strings you select (with a little
+context) to the service you chose; the [AI guide](docs/ai.md#data-and-privacy) has the
+details.
 
 ## Help and contribute
 
@@ -141,8 +139,9 @@ External batches leave your computer only when you upload them yourself.
 and [feature ideas](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=feature_request.yml)
 are welcome; a short description is enough.
 
-This project was built with substantial help from AI coding agents. I guide the
-project, review and test the results, and decide what ships.
+Built with substantial help from AI coding agents. I use the app for my own
+German translations, decide what gets built and what ships, and spot-check each
+release on real mods on top of the automated tests.
 
 ## License
 
