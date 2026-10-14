@@ -180,12 +180,15 @@ rules when checking publication status.
 
 The workflow resolves the global Nexus mod ID from this app's public mod-page ID
 using the authenticated read-only v3 API. No extra mod-ID variable is required.
-The pinned upload action supports `mod_id` and `changelog`; automatic mod-version
-updates remain disabled.
+The pinned upload action only uploads the file: it garbles non-ASCII changelog
+text such as "…", so the workflow sends the changelog itself right after the
+upload through the v3 changelog API, built with `jq` as UTF-8. It leaves out the
+Security section, which means little to players. Automatic mod-version updates
+remain disabled.
 
 If the Nexus upload fails after the GitHub release is live, check its logs and the
-Nexus Files/Changelogs tabs before retrying. The action creates the file version
-before adding the changelog, and repeated changelog submissions append text
+Nexus Files/Changelogs tabs before retrying. The upload creates the file version
+before the changelog step runs, and repeated changelog submissions append text
 rather than replace it. If neither was created, rerun the workflow manually with
 the release tag. If the file exists but its changelog is missing, add the notes
 using the **changelog_only** option on the current `main` workflow. This skips ZIP

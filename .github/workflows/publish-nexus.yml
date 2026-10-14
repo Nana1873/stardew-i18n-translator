@@ -99,10 +99,13 @@ jobs:
           echo "changelog_url=$changelog_url" >> "$GITHUB_OUTPUT"
 
           # Nexus shows every changelog line as its own entry and no Markdown:
-          # drop blank lines and the Markdown marks, keep one line per bullet.
+          # drop blank lines, the Security section (dependency updates mean
+          # little to players), and the Markdown marks; keep one line per bullet.
           changelog="$(
             printf '%s\n' "$changelog" \
-              | sed -e 's/\r$//' -e '/^[[:space:]]*$/d' \
+              | sed -e 's/\r$//' \
+              | awk '/^###* /{skip=($0 ~ /^###* Security[[:space:]]*$/)} !skip' \
+              | sed -e '/^[[:space:]]*$/d' \
                 -e 's/^###* \(.*\)$/\1:/' -e 's/^[-*] //' \
                 -e 's/\*\*//g' -e 's/`//g'
           )"
@@ -169,7 +172,8 @@ jobs:
           mod_id: ${{ steps.nexus_mod.outputs.mod_id }}
           filename: ${{ steps.release.outputs.asset_path }}
           version: ${{ steps.release.outputs.version }}
-          changelog: ${{ steps.release.outputs.changelog }}
+          # The changelog is sent by the next step: this action garbles
+          # non-ASCII text such as "…".
           display_name: Stardew i18n Translator ${{ steps.release.outputs.version }}
           description: |
             ${{ steps.release.outputs.summary }}
@@ -177,8 +181,10 @@ jobs:
             Full changelog: ${{ steps.release.outputs.changelog_url }}
           category: main
 
-      - name: Add changelog to existing Nexus version
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.changelog_only }}
+      # Runs after every upload, or alone for an existing version. jq keeps
+      # the text valid UTF-8.
+      - name: Add changelog to the Nexus version
+        if: ${{ inputs.changelog_only || steps.nexus.outcome == 'success' }}
         env:
           NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
           MOD_ID: ${{ steps.nexus_mod.outputs.mod_id }}
