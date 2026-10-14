@@ -38,8 +38,8 @@ folder and are never included in the release archive.
 
 `CHANGELOG.md` is the permanent history, and the release shows all of it: the
 release script copies the version's complete `CHANGELOG.md` section into the
-GitHub release body, and the Nexus upload sends the same text as the version
-changelog. Write each bullet so it reads well on its own; the script joins its
+GitHub release body, and the Nexus upload sends the same text, without Markdown
+and without the Security section, as the version changelog. Write each bullet so it reads well on its own; the script joins its
 wrapped lines into one line, because GitHub and Nexus show every line break and
 Nexus lists every line as a separate entry.
 
@@ -166,7 +166,8 @@ The script uploads the locally built ZIP; it does not rebuild the application.
 Publishing a normal, non-prerelease GitHub release starts
 `.github/workflows/publish-nexus.yml`. That workflow uploads the existing GitHub
 release asset and does not rebuild the app. It also sends that release's body to
-the Nexus version changelog as plain text, one line per bullet, without Markdown. The summary from `docs/release/v<version>.md` becomes the file description.
+the Nexus version changelog as plain text, one line per bullet, without Markdown
+and without the Security section. The summary from `docs/release/v<version>.md` becomes the file description.
 Empty release notes block the upload.
 
 Required GitHub configuration:
@@ -180,8 +181,8 @@ rules when checking publication status.
 
 The workflow resolves the global Nexus mod ID from this app's public mod-page ID
 using the authenticated read-only v3 API. No extra mod-ID variable is required.
-The pinned upload action only uploads the file: it garbles non-ASCII changelog
-text such as "…", so the workflow sends the changelog itself right after the
+The workflow uses the pinned upload action only to upload the file, because the
+action garbles non-ASCII changelog text such as "…", so the workflow sends the changelog itself right after the
 upload through the v3 changelog API, built with `jq` as UTF-8. It leaves out the
 Security section, which means little to players. Automatic mod-version updates
 remain disabled.
