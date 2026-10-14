@@ -25,7 +25,7 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   code, Content Patcher, and Mail Framework Mod, down to every explanation the
   app shows. Only what really breaks in the game still keeps a string out of
   the export; everything else is a note.
-- These are now notes, so the string is exported: a dropped or added `#$b#`
+- Now notes, so the string is exported: a dropped or added `#$b#`
   (the game moves long text into extra boxes itself), a missing or extra
   `#$e#` or `#$k#` page, a missing value token such as `[FarmName]` or
   `[ItemName …]` (only its value is lost), an added `[FarmName]` or
@@ -36,7 +36,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   game shows it as text in the English line too), a missing `${` or `}$` that
   was already broken in the English text, a letter without its `[#]` title,
   and missing dialogue syntax inside a letter.
-- These block, and some are new: a `#$b#` replaced by `#`, which ends the
+- Token errors, some of them new, that keep a string out of the export: a
+  `#$b#` replaced by `#`, which ends the
   conversation there; any page change in a string with `$1` or `$c`, or with
   `$d` when its versions are split by `#`, because these count pages; a
   changed `|` in a `$d` dialogue; an added empty `[]`, which the game cannot
