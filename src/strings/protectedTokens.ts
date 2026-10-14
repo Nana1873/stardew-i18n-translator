@@ -245,10 +245,39 @@ export interface SeverityContext {
   /** A letter: only the text before `[#]` is shown and dialogue syntax is
    * plain text there (`LetterViewerMenu`). */
   letter: boolean;
+  /** The `bracketKey` of every bracket token in the English text. */
+  sourceBracketKeys: Set<string>;
+  /** The `$command` words that start a page of the English text. */
+  sourcePageCommands: Set<string>;
 }
 
 export function positionalIndex(token: string): number | null {
   return /^\{\d+\}$/.test(token) ? Number(token.slice(1, -1)) : null;
+}
+
+/** Tokens a letter would show as raw text if a translation added them:
+ * dialogue commands, `%` placeholders and event commands, and bracket
+ * tokens. Mirrors Rust `shows_as_text_in_letter`. */
+function showsAsTextInLetter(token: string): boolean {
+  return (
+    token.startsWith("$") ||
+    token.startsWith("#$") ||
+    token.startsWith("%") ||
+    token.startsWith("[")
+  );
+}
+
+/** Tokens whose explanation stays the same in a letter. Mirrors Rust
+ * `keeps_meaning_in_letter`. */
+export function keepsMeaningInLetter(token: string): boolean {
+  return (
+    actsInLetter(token) ||
+    token === "@" ||
+    token === "^" ||
+    token === "#" ||
+    token === "[#]" ||
+    isGenderSwitchShape(token)
+  );
 }
 
 /** Tokens that still act in a letter: rewards, actions, he/she switches, and
@@ -260,7 +289,8 @@ function actsInLetter(token: string): boolean {
     token === "${" ||
     token === "}$" ||
     isPlaceholder(token) ||
-    isEmptyBracket(token)
+    isEmptyBracket(token) ||
+    isLetterFormat(token)
   );
 }
 
@@ -276,7 +306,12 @@ export function tokenSeverity(
   context: SeverityContext,
 ): TokenSeverity {
   const dropped = targetCount < sourceCount;
-  if (context.letter && !actsInLetter(token)) return "warning";
+  // A letter does not read dialogue commands, placeholders, or bracket tokens
+  // (`LetterViewerMenu`): a missing one is harmless, a new one shows as text.
+  if (context.letter && !actsInLetter(token))
+    return dropped || sourceCount > 0 || !showsAsTextInLetter(token)
+      ? "warning"
+      : "error";
   // `$1`, `$c`, and `$d` count pages, so any page change shows another line.
   if (context.pagesCounted && isPageToken(token)) return "error";
   const { introducesMultiplePortraits, maxPositional } = context;
@@ -290,29 +325,51 @@ export function tokenSeverity(
     // A bare `^` or `#` changes the page or gender split in dialogue but is
     // plain text in letters and UI strings; translators decide (PD-1), unless
     // the change puts two different portraits on one page.
-    ((token === "^" || token === "#") && !introducesMultiplePortraits) ||
-    (isPortraitCommand(token) && !introducesMultiplePortraits) ||
+    // Only a removed `^` or `#` or an added portrait can put two portraits on
+    // one page.
+    ((token === "^" || token === "#") &&
+      !(introducesMultiplePortraits && dropped)) ||
+    (isPortraitCommand(token) && (dropped || !introducesMultiplePortraits)) ||
+    // A `${` or `}$` the English text has is broken there already.
+    (dropped && (token === "${" || token === "}$")) ||
+    // A `$command` inside a line is not read, so the English text shows it as
+    // text already (`Dialogue.parseDialogueString`); `$k` is.
+    (dropped &&
+      /^\$[A-Za-z0-9]+$/.test(token) &&
+      token !== "$k" &&
+      !isPortraitCommand(token) &&
+      !context.sourcePageCommands.has(token)) ||
     // A missing placeholder only drops its value. A renamed or extra
     // `{{...}}` stays literal, and in dialogue its `}` hides the text before
     // it; a `{n}` above the English ones makes string.Format throw.
-    (dropped && isPlaceholder(token)) ||
+    // SMAPI fills every copy of a `{{key}}` the English text uses.
+    (isPlaceholder(token) && (dropped || sourceCount > 0)) ||
     (index !== null && maxPositional !== null && index <= maxPositional) ||
     isSkippedPage(token) ||
     // Without `#$b#` the game moves long text into extra boxes itself; a
     // bare `#` in its place ends the conversation early.
     (token === "#$b#" && !(dropped && context.addsPageBreaks)) ||
-    isMalformedBreak(token) ||
+    (isMalformedBreak(token) && (dropped || sourceCount > 0)) ||
     // A `*` in a `$y` reply becomes `#$b#` (Dialogue.cs).
     token === "*" ||
     // A lone `{` in the English text cannot be a format item, and in
     // dialogue it only keeps the conversation going.
-    (dropped && token === "{") ||
+    (token === "{" && (dropped || maxPositional === null)) ||
     (dropped && token === "[#]") ||
     // `||` only changes which text shows in which week (Dialogue.cs).
     token === "||" ||
     // An empty `[]` already fails in the English text.
     (dropped && isEmptyBracket(token)) ||
-    isTextBracket(token);
+    // A letter command the game does not recognize stays visible.
+    (isLetterFormat(token) &&
+      (dropped || sourceCount > 0 || letterFormatWorks(token))) ||
+    // A missing value token only drops its value. A new one that is not in
+    // the English text may not resolve and then shows as raw text.
+    (isTextBracket(token) &&
+      (dropped ||
+        sourceCount > 0 ||
+        alwaysResolves(token) ||
+        context.sourceBracketKeys.has(bracketKey(token))));
   return harmless ? "warning" : "error";
 }
 
@@ -331,14 +388,37 @@ export function isSkippedPage(token: string): boolean {
  * rest at `|` or `#`, so every page counts, an empty `$e` one included.
  * Mirrors Rust `counts_pages`. */
 export function countsPages(value: string): boolean {
+  const hash = value.indexOf("#");
+  // The game splits weekly `||` versions first, so `||` is no separator.
+  const versionsByPipe =
+    hash >= 0 &&
+    value
+      .slice(hash + 1)
+      .replaceAll("||", "")
+      .includes("|");
   return value
     .split("#")
     .some(
       (page) =>
         page.startsWith("$1 ") ||
         page.startsWith("$c ") ||
-        page.startsWith("$d "),
+        (page.startsWith("$d ") && !versionsByPipe),
     );
+}
+
+/** The `$command` words that start a page of `value`. A command anywhere
+ * else in a line is not read (`Dialogue.parseDialogueString` only checks a
+ * page's start), except portraits and `$k`. Mirrors Rust
+ * `page_start_commands`. */
+export function pageStartCommands(value: string): Set<string> {
+  const commands = new Set<string>();
+  for (const page of value.split("#")) {
+    const word = /^\$[A-Za-z0-9]+/.exec(page);
+    // A page that is only the command, such as `#$b#`, is its own token; a
+    // bare `$b` token is then always an inline one.
+    if (word && word[0].length < page.length) commands.add(word[0]);
+  }
+  return commands;
 }
 
 /** A `$1`, `$c`, or `$d` command token, at the start of the string or after
@@ -397,7 +477,81 @@ function isLogicBracket(token: string): boolean {
 
 export function isTextBracket(token: string): boolean {
   return (
-    token.startsWith("[") && !isLogicBracket(token) && !isEmptyBracket(token)
+    token.startsWith("[") &&
+    !isLogicBracket(token) &&
+    !isEmptyBracket(token) &&
+    !isLetterFormat(token)
+  );
+}
+
+/** `[letterbg …]` and `[textcolor …]` set a letter's background and text
+ * color (`LetterViewerMenu.ApplyCustomFormatting`). A missing one or an
+ * unknown color only changes the look; a misspelled command word or a
+ * background that is no number stays visible as text. Mirrors Rust
+ * `is_letter_format`. */
+export function isLetterFormat(token: string): boolean {
+  const lower = token.toLowerCase();
+  return lower.startsWith("[letterbg ") || lower.startsWith("[textcolor ");
+}
+
+/** Whether the game applies (and removes) the letter command: it compares
+ * the command word case-sensitively and parses the background as a number.
+ * Mirrors Rust `letter_format_works`. */
+function letterFormatWorks(token: string): boolean {
+  const words = token
+    .replace(/^\[+|\]+$/g, "")
+    .split(" ")
+    .filter(Boolean);
+  if (words[0] === "textcolor") return true;
+  if (words[0] === "letterbg") return isAsciiDigits(words[words.length - 1]);
+  return false;
+}
+
+const ALWAYS_RESOLVING_TOKENS = new Set([
+  "dayofmonth",
+  "farmeruniqueid",
+  "farmname",
+  "season",
+  "positiveadjective",
+]);
+
+const TEXT_ARGUMENT_TOKENS = new Set([
+  "genderedtext",
+  "spousefarmertext",
+  "spousegenderedtext",
+  "capitalizefirstletter",
+  "escapedtext",
+]);
+
+/** What makes a bracket token resolve: its name plus its key, name, or item
+ * ID (the first argument). Tokens whose arguments are visible text, and the
+ * fallback text of `[ItemName …]` or the format values of
+ * `[LocalizedText …]`, may be translated, so they are not part of it.
+ * Mirrors Rust `bracket_key`. */
+export function bracketKey(token: string): string {
+  const body =
+    token.startsWith("[") && token.endsWith("]") ? token.slice(1, -1) : token;
+  const { name, arguments: argumentText } = splitBracketName(body);
+  const lower = name.toLowerCase();
+  if (TEXT_ARGUMENT_TOKENS.has(lower)) return lower;
+  const key = argumentText.split(/\s+/).find(Boolean);
+  return key === undefined ? lower : `${lower} ${key}`;
+}
+
+/** Bracket tokens `TokenParser` always resolves: built-in values without
+ * arguments, and `[ArticleFor …]`, which is empty in other languages. Any
+ * other new bracket token may not resolve, and then it is left as raw text.
+ * `[SuggestedItem]` only resolves in shop dialogue (`ShopMenu`), so it is
+ * not one of them. Mirrors Rust `always_resolves`. */
+function alwaysResolves(token: string): boolean {
+  if (!token.startsWith("[") || !token.endsWith("]")) return false;
+  const { name, arguments: argumentText } = splitBracketName(
+    token.slice(1, -1),
+  );
+  const lower = name.toLowerCase();
+  return (
+    lower === "articlefor" ||
+    (argumentText.length === 0 && ALWAYS_RESOLVING_TOKENS.has(lower))
   );
 }
 
@@ -801,6 +955,11 @@ function isProtectedBracketBody(body: string): boolean {
 
   if (argumentlessBracketTokens.has(normalizedName))
     return argumentText.length === 0;
+  // Letter formatting (`LetterViewerMenu.ApplyCustomFormatting`).
+  if (normalizedName === "letterbg")
+    return hasAtomicArgumentCount(argumentText, 1, 2);
+  if (normalizedName === "textcolor")
+    return hasAtomicArgumentCount(argumentText, 1, 1);
   if (
     [
       "farmerstat",

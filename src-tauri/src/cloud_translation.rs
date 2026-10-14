@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Map, Value};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     future::Future,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -362,26 +362,14 @@ fn merge_followup(
     merged
 }
 
-/// True when any protected token in `candidate` is further from its source count
-/// than in `previous`. A token missing from the source counts as zero there, so
-/// a new foreign token is rejected unless `previous` had at least as many.
+/// True when `candidate` damages a token more than `previous`: an error moves
+/// further from its English count, or the errors stay and a lost value gets
+/// worse. A candidate that removes errors is kept even if it loses a value.
 fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> bool {
-    let distance = |difference: &crate::tokens::TokenDifference| {
-        difference.source_count.abs_diff(difference.target_count)
-    };
-    let previous_distances = crate::tokens::blocking_differences(source, previous)
-        .iter()
-        .map(|difference| (difference.token.clone(), distance(difference)))
-        .collect::<HashMap<_, _>>();
-    crate::tokens::blocking_differences(source, candidate)
-        .iter()
-        .any(|difference| {
-            distance(difference)
-                > previous_distances
-                    .get(&difference.token)
-                    .copied()
-                    .unwrap_or(0)
-        })
+    crate::tokens::repair_worsens(
+        &crate::tokens::repair_differences(source, previous),
+        &crate::tokens::repair_differences(source, candidate),
+    )
 }
 
 async fn execute_review_plans<F, Fut>(
@@ -879,8 +867,9 @@ fn build_token_repair_plans(
     let mut current_prompt_items = Vec::new();
 
     for (item, translation) in items.iter().zip(ordered) {
-        // Warnings (portraits, removed gender switches, ...) never cost a repair.
-        let differences = crate::tokens::blocking_differences(&item.source, &translation.text);
+        // Errors and lost values cost a repair; other warnings (portraits,
+        // removed gender switches, ...) never do.
+        let differences = crate::tokens::repair_differences(&item.source, &translation.text);
         if differences.is_empty() {
             continue;
         }
@@ -943,7 +932,9 @@ fn merge_valid_token_repairs(
             continue;
         }
         if let Some(index) = items.iter().position(|item| item.id == repair.id) {
-            merged[index] = repair;
+            if !introduces_token_mismatch(&repair_item.source, &merged[index].text, &repair.text) {
+                merged[index] = repair;
+            }
         }
     }
     merged

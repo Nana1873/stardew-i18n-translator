@@ -239,6 +239,31 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
+/// The differences an AI translation is asked to fix in one more attempt:
+/// every error, plus a missing value the game would have filled in (a
+/// placeholder, a value bracket token, `@`, or a `%` placeholder). Other
+/// warnings are translation choices and never cost a request.
+pub fn repair_differences(source: &str, target: &str) -> Vec<TokenDifference> {
+    token_differences(source, target)
+        .into_iter()
+        .filter(|difference| {
+            difference.is_error()
+                || (difference.target_count < difference.source_count
+                    && carries_value(&difference.token))
+        })
+        .collect()
+}
+
+/// A token the game replaces with a value, so a translation without it
+/// loses that value. `[ArticleFor …]` is empty in other languages and
+/// `%noturn` is removed, so neither carries one.
+fn carries_value(token: &str) -> bool {
+    is_placeholder(token)
+        || token == "@"
+        || (percent_placeholder_text(token).is_some() && token != "%noturn")
+        || (is_text_bracket(token) && !token.to_ascii_lowercase().starts_with("[articlefor"))
+}
+
 /// Token characters an LLM or a CJK keyboard may write as their full-width
 /// look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors TS
 /// `FULL_WIDTH_LOOKALIKES`.
@@ -265,6 +290,19 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         || differences
             .iter()
             .any(|difference| is_page_counting_command(&difference.token));
+    // A letter is an English text with one `[#]` (`mail_differences`): then
+    // the translation keeps exactly one, or a `[#]` note names that one.
+    let title = differences
+        .iter()
+        .find(|difference| difference.token == MAIL_TITLE);
+    let context = ExplainContext {
+        pages_counted,
+        letter: match title {
+            Some(title) => title.source_count == 1 && !title.is_error(),
+            None => translation.matches(MAIL_TITLE).count() == 1,
+        },
+        translation_has_switch: translation.contains("${"),
+    };
     let mut messages = Vec::new();
     let mut switch_damaged = false;
     if extra_openers > 0 && extra_closers <= 0 {
@@ -294,7 +332,7 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
             let partner = case_variant_partner(differences, &suggestion);
             merged.extend(partner.filter(|partner| covers_partner(difference, partner)));
             let error = difference.is_error() || partner.is_some_and(TokenDifference::is_error);
-            messages.push(case_variant_message(token, partner, error));
+            messages.push(case_variant_message(token, partner, error, context.letter));
             continue;
         }
         if switch_damaged
@@ -304,7 +342,7 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         {
             continue;
         }
-        messages.push(difference_message(difference, pages_counted));
+        messages.push(difference_message(difference, context));
     }
     // A look-alike explains a token difference but never adds one.
     if !messages.is_empty() {
@@ -370,12 +408,32 @@ fn change_phrase(source_count: usize, target_count: usize) -> String {
 }
 
 /// One plain-language sentence for a difference (mirrors TS `genericMessage`).
-fn difference_message(difference: &TokenDifference, pages_counted: bool) -> String {
+/// What the explanation knows about the whole translation. Mirrors TS
+/// `ExplainContext`.
+#[derive(Clone, Copy, Default)]
+struct ExplainContext {
+    /// `$1`, `$c`, or `$d` count the dialogue pages.
+    pages_counted: bool,
+    /// A letter with a `[#]` title (`LetterViewerMenu`).
+    letter: bool,
+    /// The translation has a he/she switch.
+    translation_has_switch: bool,
+}
+
+fn difference_message(difference: &TokenDifference, context: ExplainContext) -> String {
     let token = difference.token.as_str();
     let missing = difference.target_count < difference.source_count;
     let change = change_phrase(difference.source_count, difference.target_count);
+    let pages_counted = context.pages_counted;
+    // In a letter only these keep their dialogue meaning.
+    if context.letter && !keeps_meaning_in_letter(token) && !(difference.is_error() && missing) {
+        return format!(
+            "{token} {change}. {}",
+            token_consequence(difference, context)
+        );
+    }
     if is_gender_switch_shape(token) {
-        return if missing {
+        return if missing && !context.translation_has_switch {
             "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
                 .to_string()
         } else {
@@ -394,16 +452,18 @@ fn difference_message(difference: &TokenDifference, pages_counted: bool) -> Stri
         "#" if difference.is_error() && pages_counted => return format!("# {change}. A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show."),
         "^" | "#" if difference.is_error() => return format!("{token} {change}: one dialogue box now has two different portraits, so the second shows as raw text."),
         "^" => return format!("^ {change}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
+        "}" if difference.is_error() && missing => return format!("A single }} {change}. The game would show the text before it and no longer set the flag that text names."),
         "}" if difference.is_error() => return format!("A single }} {change}. The game turns the text before it into a hidden flag, so that text disappears."),
         "{" if difference.is_error() => return format!("A single {{ {change}. Mods that fill in values such as {{0}} would fail on it, and dialogue reads it as a command."),
         "{" if missing => return format!("A single {{ {change}. In dialogue it keeps the conversation going into the next box. Fine if intended."),
-        "{" | "}" => return format!("A single {token} {change}. Fine if intended."),
-        "#" => return format!("# {change}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
+        "{" => return format!("A single {{ {change}. In dialogue it joins the next box to this one. Fine if intended."),
+        "}" => return format!("A single }} {change}. Fine if intended."),
+        "#" => return format!("# {change}. In dialogue, # ends the conversation there and the rest shows the next time the player talks to the character; elsewhere it is plain text. Fine if intended."),
         _ => {}
     }
     format!(
         "{token} {change}. {}",
-        token_consequence(difference, pages_counted)
+        token_consequence(difference, context)
     )
 }
 
@@ -456,12 +516,20 @@ fn case_variant_partner<'a>(
 /// One finding for a dialogue command typed in the wrong letter case. Only
 /// when the correct command is missing from the translation is it suggested.
 /// Mirrors TS `caseVariantMessage`.
-fn case_variant_message(token: &str, partner: Option<&TokenDifference>, error: bool) -> String {
+fn case_variant_message(
+    token: &str,
+    partner: Option<&TokenDifference>,
+    error: bool,
+    letter: bool,
+) -> String {
     let text =
         format!("{token} is not a dialogue command the game knows, so it would show as text.");
     if !error {
         // Only a letter, where dialogue commands are plain text anyway.
         return format!("{text} Fine if intended.");
+    }
+    if letter {
+        return text;
     }
     let Some(partner) = partner else {
         return text;
@@ -492,13 +560,39 @@ fn is_skipped_page(token: &str) -> bool {
 
 /// Whether a page starts with `$1 <flag>`, `$c <chance>`, or `$d <check>`:
 /// `$1` and `$c` jump three pages ahead (`i += 3` in
-/// `Dialogue.parseDialogueString`) and `$d` picks a version by splitting the
-/// rest at `|` or `#`, so every page counts, an empty `$e` one included.
-/// Mirrors TS `countsPages`.
+/// `Dialogue.parseDialogueString`), so every page counts, an empty `$e` one
+/// included. `$d` picks a version by splitting the rest at `|`, or at `#`
+/// when it has no `|`; only then do its pages count. Mirrors TS
+/// `countsPages`.
 fn counts_pages(value: &str) -> bool {
+    // The game splits weekly `||` versions first, so `||` is no separator.
+    let versions_by_pipe = value
+        .split_once('#')
+        .is_some_and(|(_, rest)| rest.replace("||", "").contains('|'));
+    value.split('#').any(|page| {
+        page.starts_with("$1 ")
+            || page.starts_with("$c ")
+            || (page.starts_with("$d ") && !versions_by_pipe)
+    })
+}
+
+/// The `$command` words that start a page of `value`. A command anywhere
+/// else in a line is not read (`Dialogue.parseDialogueString` only checks a
+/// page's start), except portraits and `$k`. Mirrors TS `pageStartCommands`.
+fn page_start_commands(value: &str) -> std::collections::HashSet<String> {
     value
         .split('#')
-        .any(|page| page.starts_with("$1 ") || page.starts_with("$c ") || page.starts_with("$d "))
+        .filter_map(|page| {
+            let rest = page.strip_prefix('$')?;
+            let word: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            // A page that is only the command, such as `#$b#`, is its own
+            // token; a bare `$b` token is then always an inline one.
+            (!word.is_empty() && word.len() < rest.len()).then(|| format!("${word}"))
+        })
+        .collect()
 }
 
 /// A `$1`, `$c`, or `$d` command token, at the start of the string or after
@@ -519,7 +613,9 @@ fn picks_version(value: &str) -> bool {
 fn has_warning_text(token: &str) -> bool {
     is_skipped_page(token)
         || is_malformed_break(token)
+        || (token.starts_with('$') && !is_portrait_command(token))
         || matches!(token, "#$b#" | "*" | "[#]" | "||")
+        || is_letter_format(token)
         || percent_placeholder_text(token).is_some()
         || is_placeholder(token)
         || is_text_bracket(token)
@@ -561,7 +657,135 @@ fn is_logic_bracket(token: &str) -> bool {
 }
 
 fn is_text_bracket(token: &str) -> bool {
-    token.starts_with('[') && !is_logic_bracket(token) && !is_empty_bracket(token)
+    token.starts_with('[')
+        && !is_logic_bracket(token)
+        && !is_empty_bracket(token)
+        && !is_letter_format(token)
+}
+
+/// `[letterbg …]` and `[textcolor …]` set a letter's background and text
+/// color (`LetterViewerMenu.ApplyCustomFormatting`). A missing one or an
+/// unknown color only changes the look; a misspelled command word or a
+/// background that is no number stays visible as text. Mirrors TS
+/// `isLetterFormat`.
+fn is_letter_format(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    lower.starts_with("[letterbg ") || lower.starts_with("[textcolor ")
+}
+
+/// Whether the game applies (and removes) the letter command: it compares
+/// the command word case-sensitively and parses the background as a number.
+/// Mirrors TS `letterFormatWorks`.
+fn letter_format_works(token: &str) -> bool {
+    let body = token.trim_start_matches('[').trim_end_matches(']');
+    let words: Vec<&str> = body.split(' ').filter(|word| !word.is_empty()).collect();
+    match words.first() {
+        Some(&"textcolor") => true,
+        Some(&"letterbg") => words.last().is_some_and(|last| is_ascii_digits(last)),
+        _ => false,
+    }
+}
+
+/// Bracket tokens `TokenParser` always resolves: built-in values without
+/// arguments, and `[ArticleFor …]`, which is empty in other languages. Any
+/// other new bracket token may not resolve, and then it is left as raw text.
+/// `[SuggestedItem]` only resolves in shop dialogue (`ShopMenu`), so it is
+/// not one of them. Mirrors TS `alwaysResolves`.
+fn always_resolves(token: &str) -> bool {
+    let Some(body) = token
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let (name, arguments) = split_bracket_name(body);
+    let name = name.to_ascii_lowercase();
+    name == "articlefor"
+        || (arguments.is_empty()
+            && matches!(
+                name.as_str(),
+                "dayofmonth" | "farmeruniqueid" | "farmname" | "season" | "positiveadjective"
+            ))
+}
+
+/// What makes a bracket token resolve: its name plus its key, name, or item
+/// ID (the first argument). Tokens whose arguments are visible text, and the
+/// fallback text of `[ItemName …]` or the format values of
+/// `[LocalizedText …]`, may be translated, so they are not part of it.
+/// Mirrors TS `bracketKey`.
+fn bracket_key(token: &str) -> String {
+    let body = token
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(token);
+    let (name, arguments) = split_bracket_name(body);
+    let name = name.to_ascii_lowercase();
+    if matches!(
+        name.as_str(),
+        "genderedtext"
+            | "spousefarmertext"
+            | "spousegenderedtext"
+            | "capitalizefirstletter"
+            | "escapedtext"
+    ) {
+        return name;
+    }
+    match arguments.split_whitespace().next() {
+        Some(key) => format!("{name} {key}"),
+        None => name,
+    }
+}
+
+/// Whether `candidate` is a better AI result than `previous`, both as
+/// [`repair_differences`]: no error moves further from its English count,
+/// and either the errors shrink or they stay and the lost values shrink
+/// without one getting worse. A result that removes errors wins even if it
+/// loses a value.
+pub fn repair_improves(previous: &[TokenDifference], candidate: &[TokenDifference]) -> bool {
+    let (previous_errors, previous_values) = split_errors(previous);
+    let (candidate_errors, candidate_values) = split_errors(candidate);
+    if worsens(&previous_errors, &candidate_errors) {
+        return false;
+    }
+    let total = |items: &[&TokenDifference]| items.iter().map(|item| distance(item)).sum::<usize>();
+    total(&candidate_errors) < total(&previous_errors)
+        || (total(&candidate_errors) == total(&previous_errors)
+            && !worsens(&previous_values, &candidate_values)
+            && total(&candidate_values) < total(&previous_values))
+}
+
+/// Whether `candidate` is a worse AI result than `previous`, both as
+/// [`repair_differences`]: an error moves further from its English count, or
+/// the errors stay and a lost value gets worse.
+pub fn repair_worsens(previous: &[TokenDifference], candidate: &[TokenDifference]) -> bool {
+    let (previous_errors, previous_values) = split_errors(previous);
+    let (candidate_errors, candidate_values) = split_errors(candidate);
+    let total = |items: &[&TokenDifference]| items.iter().map(|item| distance(item)).sum::<usize>();
+    worsens(&previous_errors, &candidate_errors)
+        || (total(&candidate_errors) >= total(&previous_errors)
+            && worsens(&previous_values, &candidate_values))
+}
+
+fn split_errors(differences: &[TokenDifference]) -> (Vec<&TokenDifference>, Vec<&TokenDifference>) {
+    differences
+        .iter()
+        .partition(|difference| difference.is_error())
+}
+
+fn distance(difference: &TokenDifference) -> usize {
+    difference.source_count.abs_diff(difference.target_count)
+}
+
+/// Whether any token in `candidate` is further from its English count than in
+/// `previous`; a token `previous` does not list counts as zero there.
+fn worsens(previous: &[&TokenDifference], candidate: &[&TokenDifference]) -> bool {
+    candidate.iter().any(|difference| {
+        let before = previous
+            .iter()
+            .find(|item| item.token == difference.token)
+            .map_or(0, |item| distance(item));
+        distance(difference) > before
+    })
 }
 
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors
@@ -578,7 +802,7 @@ fn dialogue_command_consequence(token: &str) -> Option<&'static str> {
     }
     if is_skipped_page(token) {
         return Some(
-            "The game skips this command, so the dialogue plays the same. Fine if intended.",
+            "The game shows nothing for it, but like a bare # it ends the conversation there and the rest shows the next time. Fine if intended.",
         );
     }
     if token.starts_with("#$action")
@@ -592,15 +816,23 @@ fn dialogue_command_consequence(token: &str) -> Option<&'static str> {
 /// What a token difference does in the game, as one sentence. Errors name the
 /// consequence; warnings end with "Fine if intended." Mirrors TS
 /// `tokenConsequence` word for word.
-fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'static str {
+fn token_consequence(difference: &TokenDifference, context: ExplainContext) -> &'static str {
     let token = difference.token.as_str();
     let missing = difference.target_count < difference.source_count;
     let chars: Vec<char> = token.chars().collect();
+    let pages_counted = context.pages_counted;
     if matches!(token, "${" | "}$") {
         return if difference.is_error() {
             "A he/she switch is not opened and closed properly, so the game would show broken text."
         } else {
-            "Fine if intended."
+            "The English text has no working he/she switch here, so nothing breaks without it. Fine if intended."
+        };
+    }
+    if context.letter && !keeps_meaning_in_letter(token) && !(difference.is_error() && missing) {
+        return if difference.is_error() {
+            "In a letter the game does not read it, so it shows as text."
+        } else {
+            "In a letter the game shows it as plain text. Fine if intended."
         };
     }
     if !difference.is_error() && !has_warning_text(token) {
@@ -619,6 +851,9 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
             "It starts a new dialogue box; without it the game still moves long text into extra boxes. Fine if intended."
         };
     }
+    if is_malformed_break(token) && difference.is_error() {
+        return "The game does not read it as a command, so it would show as text.";
+    }
     if is_malformed_break(token) {
         return "The game does not read it as a command and shows it as text, as in the English text. Fine if intended.";
     }
@@ -629,7 +864,7 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
         return if missing {
             "The game could not read it in the English text either. Fine if intended."
         } else {
-            "The game cannot read an empty [], so the dialogue shows only \"...\" or the letter cannot be opened."
+            "The game cannot read an empty []: dialogue shows only \"...\" and a Mail Framework Mod letter cannot be opened."
         };
     }
     if let Some(command) = dialogue_command_consequence(token) {
@@ -651,7 +886,7 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
         return "In a quick-question reply it starts a new dialogue box. Fine if intended.";
     }
     if token == "_" {
-        return "It separates the question, answers, and replies of a quick question; without it the game mixes them up.";
+        return "It separates the question, answers, and replies of a quick question; an odd change makes the game show only \"...\", an even one mixes up answers and replies.";
     }
     if token == "[#]" && !missing && !difference.is_error() {
         return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
@@ -663,11 +898,18 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
             "Text after it would become the letter title."
         };
     }
-    if token == "%fork" || token.starts_with("%revealtaste") {
+    if token == "%fork" {
         return if missing {
-            "The event choice or gift-taste reveal would not happen."
+            "The event choice would not happen."
         } else {
-            "It adds event behavior the English text does not have."
+            "It adds an event choice the English text does not have."
+        };
+    }
+    if token.starts_with("%revealtaste") {
+        return if missing {
+            "The gift-taste reveal would not happen."
+        } else {
+            "It reveals a gift taste the English text does not."
         };
     }
     if let Some(text) = percent_placeholder_text(token) {
@@ -688,16 +930,28 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
     }
     if token.to_ascii_lowercase().starts_with("[articlefor") {
         return if missing {
-            "Only the a/an article is lost. Fine if intended."
+            "Other languages have no a/an article here anyway. Fine if intended."
         } else {
             "The game puts no article here in other languages. Fine if intended."
+        };
+    }
+    if is_letter_format(token) && difference.is_error() {
+        return "The game does not recognize this command, so it shows as text in the letter. Write the command word in lowercase and the background as a number, like in the English text.";
+    }
+    if is_letter_format(token) {
+        return if missing {
+            "The letter uses its default background or text color. Fine if intended."
+        } else {
+            "It sets the letter's background or text color; if it is not written like in the English text, the letter may show it as text. Fine if intended."
         };
     }
     if is_text_bracket(token) {
         return if missing {
             "The game would not insert this value. Fine if intended."
+        } else if difference.is_error() {
+            "If the game cannot resolve it, for example because its name or key was translated, players see it as raw text."
         } else {
-            "The game fills it in, or shows it as raw text if it does not know it. Fine if intended."
+            "The game fills it in. Fine if intended."
         };
     }
     if token.starts_with('[') {
@@ -708,7 +962,11 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
         };
     }
     if token.starts_with('$') && !is_portrait_command(token) {
-        return "The game would show it as text or change the dialogue flow.";
+        return if difference.is_error() {
+            "The game would show it as text or change the dialogue flow."
+        } else {
+            "The game does not read it here and shows it as text in the English line too. Fine if intended."
+        };
     }
     "The game would show it as raw text or misread the line."
 }
@@ -796,7 +1054,7 @@ fn is_placeholder(token: &str) -> bool {
 
 /// What a comparison knows about the whole string, for [`token_severity`].
 /// Mirrors TS `SeverityContext`.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct SeverityContext {
     /// The translation puts two different portraits on one page.
     introduces_multiple_portraits: bool,
@@ -809,6 +1067,10 @@ struct SeverityContext {
     /// A letter: only the text before `[#]` is shown and dialogue syntax is
     /// plain text there (`LetterViewerMenu`).
     letter: bool,
+    /// The [`bracket_key`] of every bracket token in the English text.
+    source_bracket_keys: std::collections::HashSet<String>,
+    /// The `$command` words that start a page of the English text.
+    source_page_commands: std::collections::HashSet<String>,
 }
 
 fn positional_index(token: &str) -> Option<u64> {
@@ -816,6 +1078,24 @@ fn positional_index(token: &str) -> Option<u64> {
     (match_positional(&chars, 0) == Some(chars.len()))
         .then(|| token[1..token.len() - 1].parse().ok())
         .flatten()
+}
+
+/// Tokens a letter would show as raw text if a translation added them:
+/// dialogue commands, `%` placeholders and event commands, and bracket
+/// tokens. Mirrors TS `showsAsTextInLetter`.
+fn shows_as_text_in_letter(token: &str) -> bool {
+    token.starts_with('$')
+        || token.starts_with("#$")
+        || token.starts_with('%')
+        || token.starts_with('[')
+}
+
+/// Tokens whose explanation stays the same in a letter. Mirrors TS
+/// `keepsMeaningInLetter`.
+fn keeps_meaning_in_letter(token: &str) -> bool {
+    acts_in_letter(token)
+        || matches!(token, "@" | "^" | "#" | MAIL_TITLE)
+        || is_gender_switch_shape(token)
 }
 
 /// Tokens that still act in a letter: rewards, actions, he/she switches, and
@@ -826,17 +1106,25 @@ fn acts_in_letter(token: &str) -> bool {
         || matches!(token, "${" | "}$")
         || is_placeholder(token)
         || is_empty_bracket(token)
+        || is_letter_format(token)
 }
 
 fn token_severity(
     token: &str,
     source_count: usize,
     target_count: usize,
-    context: SeverityContext,
+    context: &SeverityContext,
 ) -> Severity {
     let dropped = target_count < source_count;
     if context.letter && !acts_in_letter(token) {
-        return Severity::Warning;
+        // A letter does not read dialogue commands, placeholders, or bracket
+        // tokens (`LetterViewerMenu`): a missing one is harmless, a new one
+        // shows as text.
+        return if dropped || source_count > 0 || !shows_as_text_in_letter(token) {
+            Severity::Warning
+        } else {
+            Severity::Error
+        };
     }
     // `$1`, `$c`, and `$d` count pages, so any page change shows another line.
     if context.pages_counted && is_page_token(token) {
@@ -851,30 +1139,52 @@ fn token_severity(
         // A bare `^` or `#` changes the page or gender split in dialogue but is
         // plain text in letters and UI strings; translators decide (PD-1),
         // unless the change puts two different portraits on one page.
-        || (matches!(token, "^" | "#") && !introduces_multiple_portraits)
-        || (is_portrait_command(token) && !introduces_multiple_portraits)
+        // Only a removed `^` or `#` or an added portrait can put two
+        // portraits on one page.
+        || (matches!(token, "^" | "#") && !(introduces_multiple_portraits && dropped))
+        || (is_portrait_command(token) && (dropped || !introduces_multiple_portraits))
+        // A `${` or `}$` the English text has is broken there already.
+        || (dropped && matches!(token, "${" | "}$"))
+        // A `$command` inside a line is not read, so the English text shows
+        // it as text already (`Dialogue.parseDialogueString`); `$k` is.
+        || (dropped
+            && token.starts_with('$')
+            && token[1..].chars().all(|c| c.is_ascii_alphanumeric())
+            && token != "$k"
+            && !is_portrait_command(token)
+            && !context.source_page_commands.contains(token))
         // A missing placeholder only drops its value. A renamed or extra
         // `{{...}}` stays literal, and in dialogue its `}` hides the text
         // before it; a `{n}` above the English ones makes string.Format throw.
-        || (dropped && is_placeholder(token))
+        // SMAPI fills every copy of a `{{key}}` the English text uses.
+        || (is_placeholder(token) && (dropped || source_count > 0))
         || positional_index(token)
             .is_some_and(|index| context.max_positional.is_some_and(|max| index <= max))
         || is_skipped_page(token)
         // Without `#$b#` the game moves long text into extra boxes itself;
         // a bare `#` in its place ends the conversation early.
         || (token == "#$b#" && !(dropped && context.adds_page_breaks))
-        || is_malformed_break(token)
+        || (is_malformed_break(token) && (dropped || source_count > 0))
         // A `*` in a `$y` reply becomes `#$b#` (Dialogue.cs).
         || token == "*"
         // A lone `{` in the English text cannot be a format item, and in
         // dialogue it only keeps the conversation going.
-        || (dropped && token == "{")
+        || (token == "{" && (dropped || context.max_positional.is_none()))
         || (dropped && token == MAIL_TITLE)
         // `||` only changes which text shows in which week (Dialogue.cs).
         || token == "||"
         // An empty `[]` already fails in the English text.
         || (dropped && is_empty_bracket(token))
-        || is_text_bracket(token);
+        // A letter command the game does not recognize stays visible.
+        || (is_letter_format(token)
+            && (dropped || source_count > 0 || letter_format_works(token)))
+        // A missing value token only drops its value. A new one that is not
+        // in the English text may not resolve and then shows as raw text.
+        || (is_text_bracket(token)
+            && (dropped
+                || source_count > 0
+                || always_resolves(token)
+                || context.source_bracket_keys.contains(&bracket_key(token))));
     if harmless {
         Severity::Warning
     } else {
@@ -895,8 +1205,9 @@ const MAIL_TITLE: &str = "[#]";
 /// collection shows the text after it as the title, unprocessed
 /// (`LetterViewerMenu`, `CollectionsPage`; SDV 1.6). Text after a second
 /// `[#]` never appears. So for an English letter with one `[#]` only the
-/// letter text is compared, per player gender; a missing title stays an
-/// error and extra `[#]` are a note. Mirrors TS `mailDifferences`.
+/// letter text is compared, per player gender; a missing title shows at the
+/// end of the letter and extra `[#]` hide text, so both are notes. Mirrors TS
+/// `mailDifferences`.
 fn mail_differences(source: &str, target: &str) -> Option<Vec<TokenDifference>> {
     if source.matches(MAIL_TITLE).count() != 1 {
         return None;
@@ -1003,6 +1314,12 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
             .filter_map(|token| positional_index(token))
             .max(),
         letter,
+        source_bracket_keys: source_counts
+            .keys()
+            .filter(|token| is_text_bracket(token))
+            .map(|token| bracket_key(token))
+            .collect(),
+        source_page_commands: page_start_commands(source),
     };
     let mut tokens: Vec<String> = source_counts
         .keys()
@@ -1027,7 +1344,7 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
                 return None;
             }
             (source_count != target_count).then(|| TokenDifference {
-                severity: token_severity(&token, source_count, target_count, context),
+                severity: token_severity(&token, source_count, target_count, &context),
                 token,
                 source_count,
                 target_count,
@@ -1612,6 +1929,10 @@ fn is_protected_bracket_body(body: &str) -> bool {
             arguments.is_empty()
         }
 
+        // Letter formatting (`LetterViewerMenu.ApplyCustomFormatting`).
+        "letterbg" => has_atomic_argument_count(arguments, 1, 2),
+        "textcolor" => has_atomic_argument_count(arguments, 1, 1),
+
         // Built-in ID/key/control-value forms whose arguments aren't visible
         // prose. Keep the accepted arities intentionally narrow.
         "farmerstat"
@@ -1831,7 +2152,7 @@ const PERCENT_PLACEHOLDERS: [(&str, &str); 17] = [
     ),
     (
         "%noturn",
-        "It keeps the character from turning to face the player. Fine if intended.",
+        "At a festival it keeps the character from turning to face the player. Fine if intended.",
     ),
     (
         "%place",
@@ -2165,7 +2486,7 @@ mod tests {
                     token: "{{name}}".into(),
                     source_count: 1,
                     target_count: 2,
-                    severity: Severity::Error,
+                    severity: Severity::Warning,
                 },
             ]
         );
@@ -2177,6 +2498,45 @@ mod tests {
             .into_iter()
             .map(|difference| (difference.token, difference.severity))
             .collect()
+    }
+
+    #[test]
+    fn repair_comparison_puts_errors_before_lost_values() {
+        let source = "Hi {{name}}, @!";
+        let repair = |target: &str| repair_differences(source, target);
+        // Removing an error wins although `@` is lost.
+        let blocking = repair("Hallo {{other}}, @!");
+        let fixed = repair("Hallo {{name}}!");
+        assert!(repair_improves(&blocking, &fixed));
+        assert!(!repair_worsens(&blocking, &fixed));
+        // With the same errors, losing another value is worse.
+        let clean = repair("Hallo {{name}}, @!");
+        assert!(repair_worsens(&clean, &fixed));
+        assert!(!repair_improves(&clean, &fixed));
+        assert!(repair_improves(&fixed, &clean));
+    }
+
+    #[test]
+    fn repair_differences_keep_errors_and_lost_values_only() {
+        let tokens = |source: &str, target: &str| -> Vec<String> {
+            repair_differences(source, target)
+                .into_iter()
+                .map(|difference| difference.token)
+                .collect()
+        };
+        assert_eq!(
+            tokens("Hello [FarmName], {{name}} and @!", "Hallo!"),
+            vec!["@", "[FarmName]", "{{name}}"]
+        );
+        assert_eq!(tokens("Here.[128]", "Hier."), vec!["[128]"]);
+        // Translation choices never cost a retry.
+        assert!(tokens("Hi.$h#$b#Bye.", "Hallo. Tschüss.").is_empty());
+        assert!(tokens(
+            "Bring [ArticleFor [SuggestedItem]].",
+            "Bring [SuggestedItem]."
+        )
+        .is_empty());
+        assert!(tokens("Wait, %noturn friend.", "Warte, Freund.").is_empty());
     }
 
     #[test]
@@ -2234,10 +2594,10 @@ mod tests {
 
     #[test]
     fn missing_token_list_reports_each_missing_token_once() {
-        // Two `$b` in source, one in target -> `$b` reported; `{{name}}` is fine.
+        // Two `$k` in source, one in target -> `$k` reported; `{{name}}` is fine.
         assert_eq!(
-            missing_token_list("Hi {{name}}$b more$b", "Hallo {{name}}$b mehr"),
-            vec!["$b".to_string()],
+            missing_token_list("Hi {{name}}$k more$k", "Hallo {{name}}$k mehr"),
+            vec!["$k".to_string()],
         );
         // Nothing missing.
         assert!(missing_token_list("Hi {{name}}", "Hallo {{name}}").is_empty());
@@ -2259,8 +2619,8 @@ mod tests {
         ));
         assert!(missing_token_list("a\nb\nc", "abc").is_empty());
         // Real tokens are still enforced even when newlines also differ.
-        assert!(missing_tokens("Hi$b\nmore", "Hallo"));
-        assert_eq!(missing_token_list("Hi$b\nmore", "Hallo"), vec!["$b"]);
+        assert!(missing_tokens("Hi$k\nmore", "Hallo"));
+        assert_eq!(missing_token_list("Hi$k\nmore", "Hallo"), vec!["$k"]);
     }
 
     #[test]
@@ -2279,8 +2639,8 @@ mod tests {
         assert!(missing_token_list("'test'", "test").is_empty());
 
         // Real tokens are still enforced when a quote difference also exists.
-        assert!(missing_tokens("Hi$b 'q'", "Hallo"));
-        assert_eq!(missing_token_list("Hi$b 'q'", "Hallo"), vec!["$b"]);
+        assert!(missing_tokens("Hi$k 'q'", "Hallo"));
+        assert_eq!(missing_token_list("Hi$k 'q'", "Hallo"), vec!["$k"]);
     }
 
     /// Drift guard against the TS extractor: both suites run the same fixture
