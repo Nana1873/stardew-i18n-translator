@@ -80,7 +80,7 @@ fn translate(source: &str, replies: &[&str]) -> (TranslationResult, Vec<serde_js
         "German",
         None,
         &[],
-        &["Neighbor [Other.Token]".to_string()],
+        &["Neighbor [129]".to_string()],
         &[],
         None,
     ));
@@ -91,26 +91,18 @@ fn translate(source: &str, replies: &[&str]) -> (TranslationResult, Vec<serde_js
 #[test]
 fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
     for (source, first, repaired) in [
-        ("Hello [FarmName]!", "Hallo!", "Hallo [FarmName]!"),
+        ("Hello [128]!", "Hallo!", "Hallo [128]!"),
+        ("Hello [128]!", "Hallo [128] [129]!", "Hallo [128]!"),
+        ("Hello [128]!", "Hallo [128] [128]!", "Hallo [128]!"),
         (
-            "Hello [FarmName]!",
-            "Hallo [FarmName] [Other.Token]!",
-            "Hallo [FarmName]!",
+            "[(O)130] now, [(O)130] later.",
+            "[(O)130] jetzt.",
+            "[(O)130] jetzt, [(O)130] später.",
         ),
         (
-            "Hello [FarmName]!",
-            "Hallo [FarmName] [FarmName]!",
-            "Hallo [FarmName]!",
-        ),
-        (
-            "[Count.Token] now, [Count.Token] later.",
-            "[Count.Token] jetzt.",
-            "[Count.Token] jetzt, [Count.Token] später.",
-        ),
-        (
-            "${He^She}$ has [Item.Token].",
-            "${Er^Sie hat [Item.Token].",
-            "${Er^Sie}$ hat [Item.Token].",
+            "${He^She}$ has [(O)388].",
+            "${Er^Sie hat [(O)388].",
+            "${Er^Sie}$ hat [(O)388].",
         ),
     ] {
         let (result, requests) = translate(source, &[first, repaired]);
@@ -135,21 +127,17 @@ fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
 #[test]
 fn retains_first_draft_when_retry_is_equal_worse_or_damages_another_token() {
     for (source, first, retry) in [
-        ("Hello [FarmName]!", "Hallo!", "Guten Tag!"),
+        ("Hello [128]!", "Hallo!", "Guten Tag!"),
+        ("Hello [128]!", "Hallo!", "Hallo [128] [128]!"),
         (
-            "Hello [FarmName]!",
+            "[128] gets [(O)388].",
             "Hallo!",
-            "Hallo [FarmName] [FarmName]!",
+            "[128] bekommt [(O)388] [129].",
         ),
         (
-            "[FarmName] gets [Item.Token].",
-            "Hallo!",
-            "[FarmName] bekommt [Item.Token] [Other.Token].",
-        ),
-        (
-            "Hello [FarmName]!",
-            "Hallo [FarmName] [Other.Token]!",
-            "Hallo [FarmName] [Other.Token] [Other.Token]!",
+            "Hello [128]!",
+            "Hallo [128] [129]!",
+            "Hallo [128] [129] [129]!",
         ),
     ] {
         let (result, requests) = translate(source, &[first, retry]);
@@ -161,13 +149,11 @@ fn retains_first_draft_when_retry_is_equal_worse_or_damages_another_token() {
 
 #[test]
 fn partially_improved_retry_remains_invalid_without_a_third_request() {
-    let source = "[Count.Token] now, [Count.Token] later.";
-    let (result, requests) = translate(
-        source,
-        &["Jetzt und später.", "[Count.Token] jetzt und später."],
-    );
-    assert_eq!(result.text, "[Count.Token] jetzt und später.");
-    assert_eq!(result.missing_tokens, vec!["[Count.Token]"]);
+    let source = "[(O)130] now, [(O)130] later.";
+    let (result, requests) =
+        translate(source, &["Jetzt und später.", "[(O)130] jetzt und später."]);
+    assert_eq!(result.text, "[(O)130] jetzt und später.");
+    assert_eq!(result.missing_tokens, vec!["[(O)130]"]);
     assert_eq!(requests.len(), 2);
     assert!(!tokens::token_differences(source, &result.text).is_empty());
 }
@@ -175,9 +161,9 @@ fn partially_improved_retry_remains_invalid_without_a_third_request() {
 #[test]
 fn preserves_legitimate_quotes_and_does_not_retry_soft_layout_differences() {
     for (source, translated) in [
-        ("\"Hello [FarmName]!\"", "\"Hallo [FarmName]!\""),
-        ("'Hello [FarmName]!'", "'Hallo [FarmName]!'"),
-        ("Hello [FarmName]!", "Hallo\n[FarmName]!"),
+        ("\"Hello [128]!\"", "\"Hallo [128]!\""),
+        ("'Hello [128]!'", "'Hallo [128]!'"),
+        ("Hello [128]!", "Hallo\n[128]!"),
     ] {
         let (result, requests) = translate(source, &[translated]);
         assert_eq!(result.text, translated);
@@ -189,21 +175,21 @@ fn preserves_legitimate_quotes_and_does_not_retry_soft_layout_differences() {
 #[test]
 fn encoded_translation_is_decoded_before_saving_or_retrying_tokens() {
     for (source, translated) in [
-        ("Hello [FarmName]!", "Hallo [FarmName]!"),
-        ("\"Hello [FarmName]!\"", "\"Hallo [FarmName]!\""),
+        ("Hello [128]!", "Hallo [128]!"),
+        ("\"Hello [128]!\"", "\"Hallo [128]!\""),
     ] {
         let encoded = serde_json::to_string(translated).unwrap();
         let (result, requests) = translate(source, &[&encoded]);
         assert_eq!(result.text, translated);
         assert_eq!(requests.len(), 1);
     }
-    let first = serde_json::to_string("Hallo [FarmName] [Other.Token]!").unwrap();
-    let repaired = serde_json::to_string("Hallo [FarmName]!").unwrap();
-    let (result, requests) = translate("Hello [FarmName]!", &[&first, &repaired]);
-    assert_eq!(result.text, "Hallo [FarmName]!");
+    let first = serde_json::to_string("Hallo [128] [129]!").unwrap();
+    let repaired = serde_json::to_string("Hallo [128]!").unwrap();
+    let (result, requests) = translate("Hello [128]!", &[&first, &repaired]);
+    assert_eq!(result.text, "Hallo [128]!");
     assert_eq!(requests.len(), 2);
     assert!(requests[1]["messages"][0]["content"]
         .as_str()
         .unwrap()
-        .contains("\"[Other.Token]\": expected 0, previous response 1"));
+        .contains("\"[129]\": expected 0, previous response 1"));
 }

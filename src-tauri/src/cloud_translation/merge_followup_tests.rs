@@ -45,11 +45,11 @@ const TWO_ZEROS: &str = "[128] gave [128] coins.";
 #[test]
 fn clean_followup_is_accepted_and_new_damage_is_rejected() {
     let items = vec![
-        item("item-0000", "Hello, [FarmName]."),
+        item("item-0000", "Hello, [128]."),
         item("item-0001", "You have [128] coins."),
     ];
     let previous = vec![
-        translation("item-0000", "Hallo, [FarmName]."),
+        translation("item-0000", "Hallo, [128]."),
         translation("item-0001", "Du hast [128] Münzen."),
     ];
 
@@ -108,13 +108,10 @@ fn multi_occurrence_token_overshooting_further_is_rejected() {
 
 #[test]
 fn new_foreign_token_is_rejected_unless_previous_had_as_many() {
+    assert_eq!(merged_text("Hello.", "Hallo.", "Hallo, [128]."), "Hallo.");
     assert_eq!(
-        merged_text("Hello.", "Hallo.", "Hallo, [FarmName]."),
-        "Hallo."
-    );
-    assert_eq!(
-        merged_text("Hello.", "Hallo, [FarmName].", "Hallo du, [FarmName]."),
-        "Hallo du, [FarmName]."
+        merged_text("Hello.", "Hallo, [128].", "Hallo du, [128]."),
+        "Hallo du, [128]."
     );
 }
 
@@ -132,7 +129,7 @@ fn followup_that_improves_or_keeps_a_miscount_is_accepted() {
     );
     // Keeps an existing missing token.
     assert_eq!(
-        merged_text("Hello, [FarmName].", "Hallo.", "Hallo zusammen."),
+        merged_text("Hello, [128].", "Hallo.", "Hallo zusammen."),
         "Hallo zusammen."
     );
 }

@@ -555,7 +555,7 @@ describe("StringEditor", () => {
       <StringEditor
         {...props}
         row={row({
-          source: "Hello [First.Token]",
+          source: "Hello [128]",
           tokenMismatchAccepted: true,
         })}
       />,
@@ -574,7 +574,7 @@ describe("StringEditor", () => {
       <StringEditor
         {...props}
         row={row({
-          source: "Hello [Second.Token]",
+          source: "Hello [129]",
           tokenMismatchAccepted: true,
         })}
       />,
@@ -592,7 +592,7 @@ describe("StringEditor", () => {
       screen.getByRole("dialog", {
         name: "A token differs from the English text",
       }),
-    ).toHaveTextContent("[Second.Token]");
+    ).toHaveTextContent("[129]");
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -641,7 +641,7 @@ describe("StringEditor", () => {
 
   it("requires an explicit confirmation before accepting token errors", async () => {
     const { onSave, onNavigate } = renderEditor({
-      source: "What happened?#$b#Oh.$8",
+      source: "What happened?[128]Oh.$8",
       target: "Was ist passiert? Oh.$8",
     });
 
@@ -689,7 +689,7 @@ describe("StringEditor", () => {
 
   it("reuses an accepted mismatch until the translation is edited", async () => {
     const { onSave } = renderEditor({
-      source: "What happened?#$b#Oh.$8",
+      source: "What happened?[128]Oh.$8",
       target: "Was ist passiert? Oh.$8",
       tokenMismatchAccepted: true,
     });
@@ -735,7 +735,7 @@ describe("StringEditor", () => {
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {
     renderEditor({
-      source: "Saved [FarmName]",
+      source: "Saved [128]",
       target: "Gespeichert",
       tokenMismatchAccepted: true,
     });
@@ -747,7 +747,7 @@ describe("StringEditor", () => {
     expect(warning.closest(".translator-validation")).not.toHaveClass(
       "is-error",
     );
-    expect(screen.getByRole("button", { name: /FarmName/i })).toHaveClass(
+    expect(screen.getByRole("button", { name: /\[128\]/ })).toHaveClass(
       "is-accepted",
     );
   });
@@ -1307,7 +1307,7 @@ it("saves a single space as Done and clearing it returns the entry to Open", asy
 
 it("still requires explicit token mismatch acceptance for an intentional space", async () => {
   const app = renderEditor({
-    source: "Tree [Count.Token]",
+    source: "Tree [130]",
     target: "",
     status: "untranslated",
   });

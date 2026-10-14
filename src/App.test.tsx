@@ -3288,7 +3288,7 @@ describe("App shell", () => {
         return Promise.resolve([
           {
             key: "greeting",
-            source: "Hello#$b#there",
+            source: "Hello[128]there",
             target: "Hallo",
             status: "translated",
           },

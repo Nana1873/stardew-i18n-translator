@@ -1669,7 +1669,7 @@ mod tests {
     fn export_preview_reports_omissions_and_exact_accepted_revisions_without_writes() {
         let root = crate::test_support::temp_dir("export-preview");
         let i18n = root.join("i18n");
-        write(&i18n.join("default.json"), r#"{"k":"Hello#$b#Bye"}"#);
+        write(&i18n.join("default.json"), r#"{"k":"Hello[128]Bye"}"#);
         let state_key = translations::entry_key("i18n", "k");
         translations::save_one(
             &root,
@@ -1678,7 +1678,7 @@ mod tests {
             translations::StoredString {
                 target: "Hallo Tschuess".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello#$b#Bye"),
+                source_hash: translations::source_hash("Hello[128]Bye"),
             },
         )
         .unwrap();
@@ -1701,7 +1701,7 @@ mod tests {
             translations::StoredString {
                 target: "Hallo Tschuess".into(),
                 status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
-                source_hash: translations::source_hash("Hello#$b#Bye"),
+                source_hash: translations::source_hash("Hello[128]Bye"),
             },
         )
         .unwrap();
@@ -1709,7 +1709,7 @@ mod tests {
         assert_eq!(accepted.accepted_mismatches, 1);
         assert!(accepted.omitted.is_empty());
 
-        write(&i18n.join("default.json"), r#"{"k":"Updated#$b#Bye"}"#);
+        write(&i18n.join("default.json"), r#"{"k":"Updated[128]Bye"}"#);
         let changed = preview_export(&root, &mods).unwrap();
         assert_eq!(changed.accepted_mismatches, 0);
         assert_eq!(changed.omitted[0].key, "k");
@@ -1725,7 +1725,7 @@ mod tests {
         let clean = root.join("clean/i18n");
         let blocked = root.join("blocked/i18n");
         write(&clean.join("default.json"), r#"{"ok":"Hello"}"#);
-        write(&blocked.join("default.json"), r#"{"bad":"Bye#$b#now"}"#);
+        write(&blocked.join("default.json"), r#"{"bad":"Bye[128]now"}"#);
         translations::save_one(
             &root,
             "blocked.mod",
@@ -1733,7 +1733,7 @@ mod tests {
             translations::StoredString {
                 target: "Tschüss".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Bye#$b#now"),
+                source_hash: translations::source_hash("Bye[128]now"),
             },
         )
         .unwrap();
@@ -1913,7 +1913,7 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye [FarmName]\" }",
+            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye [128]\" }",
         );
         write(&i18n.join("de.json"), "{ \"old\": \"untouched\" }");
         // `ok` keeps the token; `bad` drops its page break -> only `bad` is
@@ -1936,7 +1936,7 @@ mod tests {
             translations::StoredString {
                 target: "Tschüss".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Bye [FarmName]"),
+                source_hash: translations::source_hash("Bye [128]"),
             },
         )
         .unwrap();
@@ -1960,18 +1960,15 @@ mod tests {
     fn added_token_also_omits_the_string() {
         let root = crate::test_support::temp_dir("export-added-token");
         let i18n = root.join("i18n");
-        write(
-            &i18n.join("default.json"),
-            "{ \"bad\": \"Hello [FarmName]\" }",
-        );
+        write(&i18n.join("default.json"), "{ \"bad\": \"Hello [128]\" }");
         translations::save_one(
             &root,
             "mod.id",
             translations::entry_key("i18n", "bad"),
             translations::StoredString {
-                target: "Hallo [FarmName][FarmName]".into(),
+                target: "Hallo [128][128]".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello [FarmName]"),
+                source_hash: translations::source_hash("Hello [128]"),
             },
         )
         .unwrap();
@@ -1994,11 +1991,11 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            r#"{"a":"First#$b#a","b":"Second#$b#b"}"#,
+            r#"{"a":"First[128]a","b":"Second[128]b"}"#,
         );
         for (key, source, target) in [
-            ("a", "First#$b#a", "Erste Zeile a"),
-            ("b", "Second#$b#b", "Zweite Zeile b"),
+            ("a", "First[128]a", "Erste Zeile a"),
+            ("b", "Second[128]b", "Zweite Zeile b"),
         ] {
             translations::save_one(
                 &root,
@@ -2063,16 +2060,16 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            "{ \"translated\": \"Hello [FarmName]\", \"empty\": \"Bye {{name}}\" }",
+            "{ \"translated\": \"Hello [128]\", \"empty\": \"Bye {{name}}\" }",
         );
         translations::save_one(
             &root,
             "mod.id",
             translations::entry_key("i18n", "translated"),
             translations::StoredString {
-                target: "Hallo [FarmName]".into(),
+                target: "Hallo [128]".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello [FarmName]"),
+                source_hash: translations::source_hash("Hello [128]"),
             },
         )
         .unwrap();
@@ -2336,11 +2333,11 @@ mod tests {
         let second = root.join("second/i18n");
         write(&first.join("default.json"), r#"{"k":"First"}"#);
         write(&first.join("de.json"), r#"{"k":"First old"}"#);
-        write(&second.join("default.json"), r#"{"k":"Hi#$b#there"}"#);
+        write(&second.join("default.json"), r#"{"k":"Hi[128]there"}"#);
         write(&second.join("de.json"), r#"{"k":"Second old"}"#);
         for (id, relative_dir, source, target) in [
             ("first.id", "first/i18n", "First", "Erste"),
-            ("second.id", "second/i18n", "Hi#$b#there", "Hallo"),
+            ("second.id", "second/i18n", "Hi[128]there", "Hallo"),
         ] {
             translations::save_one(
                 &root,

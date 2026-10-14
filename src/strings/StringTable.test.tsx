@@ -103,7 +103,7 @@ const ROWS = {
     },
     {
       key: "token",
-      source: "Hi [FarmName]",
+      source: "Hi [128]",
       target: "Hallo",
       status: "outdated",
       tokenMismatchAccepted: false,
@@ -319,7 +319,7 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   const input = screen.getByRole("textbox", { name: "Translation" });
   fireEvent.change(input, { target: { value: "Manual draft" } });
   input.focus();
-  const source = "Bye now [FarmName]";
+  const source = "Bye now [128]";
   installBackendRows({
     "a.b": ROWS["a.b"].map((row) =>
       row.key === "bye" ? { ...row, source } : row,
@@ -1354,7 +1354,7 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} onLlmBatchExportForMod={vi.fn()} />);
     await screen.findByText("token");
 
-    const validation = issueMarker(document.body, /\[FarmName\] is missing/i);
+    const validation = issueMarker(document.body, /\[128\] is missing/i);
     expect(validation).toHaveClass("translator-inline-validation");
     fireEvent.click(validation);
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
@@ -1402,12 +1402,12 @@ describe("StringTable workbench", () => {
         {
           ...ROWS["a.b"][2],
           key: "mixed",
-          source: "Hello [FarmName]\\n",
+          source: "Hello [128]\\n",
         },
         {
           ...ROWS["a.b"][2],
           key: "accepted",
-          source: "Hello [FarmName]\\n",
+          source: "Hello [128]\\n",
           status: "translated",
           tokenMismatchAccepted: true,
         },
@@ -1462,7 +1462,7 @@ describe("StringTable workbench", () => {
     fireEvent.blur(warning);
     fireEvent.focus(error);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Must fix or Save anyway: until then this text stays English in the game. [FarmName] is missing",
+      "Must fix or Save anyway: until then this text stays English in the game. [128] is missing",
     );
     fireEvent.blur(error);
     const accepted = issueMarker(
@@ -1471,7 +1471,7 @@ describe("StringTable workbench", () => {
     );
     fireEvent.focus(accepted);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Kept on purpose: exported as written. [FarmName] is missing",
+      "Kept on purpose: exported as written. [128] is missing",
     );
     expect(screen.getByRole("tooltip")).toHaveTextContent(
       "Special codes like \\n differ from the English text.",
@@ -1557,9 +1557,9 @@ describe("StringTable workbench", () => {
             {
               relativeDir: "i18n",
               key: "token",
-              target: "Hi [FarmName]",
+              target: "Hi [128]",
               status: "translated",
-              source: "Hi [FarmName]",
+              source: "Hi [128]",
             },
           ],
         },
@@ -2016,7 +2016,7 @@ describe("StringTable workbench", () => {
             expect.objectContaining({
               relativeDir: "i18n",
               key: "token",
-              target: "Hi [FarmName]",
+              target: "Hi [128]",
               status: "translated",
             }),
           ]),
@@ -2707,7 +2707,7 @@ describe("StringTable workbench", () => {
                 relativeDir: "i18n",
                 key: "token",
               },
-              text: "Hallo [FarmName]",
+              text: "Hallo [128]",
               status: "review-needed",
               tokenDifferences: [],
               glossaryMisses: [],
@@ -2743,7 +2743,7 @@ describe("StringTable workbench", () => {
       2,
       expect.objectContaining({
         key: "token",
-        target: "Hallo [FarmName]",
+        target: "Hallo [128]",
       }),
     );
     expect(
@@ -2752,7 +2752,7 @@ describe("StringTable workbench", () => {
     expect(rowFor("bye")).toHaveAttribute("data-status", "review-needed");
     expect(rowFor("bye")).toHaveTextContent("Tschüss");
     expect(rowFor("token")).toHaveAttribute("data-status", "review-needed");
-    expect(rowFor("token")).toHaveTextContent("Hallo [FarmName]");
+    expect(rowFor("token")).toHaveTextContent("Hallo [128]");
 
     const translatedCell = rowFor("bye").querySelector<HTMLElement>(
       ".translator-translation-col",
@@ -2992,7 +2992,7 @@ describe("StringTable workbench", () => {
         {
           relativeDir: "i18n",
           key: "token",
-          source: "Hi [FarmName]",
+          source: "Hi [128]",
         },
       ],
       3,
@@ -3299,10 +3299,7 @@ describe("StringTable workbench", () => {
     expect(actionHeader).toHaveClass("translator-row-actions-col");
     expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
 
-    const issueControl = issueMarkers(
-      document.body,
-      /\[FarmName\] is missing/i,
-    )[0];
+    const issueControl = issueMarkers(document.body, /\[128\] is missing/i)[0];
     const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
     if (!tokenRow) throw new Error("Missing row for validation control");
     const translationCell = tokenRow.querySelector<HTMLElement>(

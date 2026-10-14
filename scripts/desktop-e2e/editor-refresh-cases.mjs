@@ -214,7 +214,7 @@ export async function editorRefreshCases(h) {
           "#translator-editor-translation",
         );
       });
-      source.draft = "Hello [FarmName].";
+      source.draft = "Hello [128].";
       await writeFile(defaultPath, JSON.stringify(source));
       await complete("Hintergrund aktualisiert.", source.background);
       await h.waitFor(
@@ -271,7 +271,7 @@ export async function editorRefreshCases(h) {
     await h.step("editor-save-during-refresh", async () => {
       await startRun("next");
       await h.openEntry("draft");
-      const target = "Gespeichert beim Refresh [FarmName].";
+      const target = "Gespeichert beim Refresh [128].";
       await h.fill(h.css("#translator-editor-translation"), target);
       await h.driver().executeScript(() => {
         window.editorRefreshTest.hold = true;
