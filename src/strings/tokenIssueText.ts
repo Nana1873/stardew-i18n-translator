@@ -2,7 +2,9 @@ import {
   countsPages,
   isEmptyBracket,
   isMalformedBreak,
+  isPageCountingCommand,
   isPageToken,
+  isPercentPlaceholder,
   isSkippedPage,
   isTextBracket,
   isGenderSwitchShape,
@@ -157,8 +159,11 @@ function dialogueCommandConsequence(token: string): string | null {
 function caseVariantMessage(
   token: string,
   partner: TokenDifference | undefined,
+  error: boolean,
 ): string {
   const text = `${token} is not a dialogue command the game knows, so it would show as text.`;
+  // Only a letter, where dialogue commands are plain text anyway.
+  if (!error) return `${text} Fine if intended.`;
   if (!partner) return text;
   // `#$e#` itself does nothing, so its purpose would only confuse here.
   const purpose = isSkippedPage(partner.token)
@@ -180,6 +185,23 @@ function coversPartner(
   );
 }
 
+/** Warnings with their own explanation; any other warning is dialogue
+ * syntax in a letter. Mirrors Rust `has_warning_text`. */
+function hasWarningText(token: string): boolean {
+  return (
+    isSkippedPage(token) ||
+    isMalformedBreak(token) ||
+    token === "#$b#" ||
+    token === "*" ||
+    token === "[#]" ||
+    isPercentPlaceholder(token) ||
+    (token.startsWith("{{") && token.endsWith("}}")) ||
+    /^\{\d+\}$/.test(token) ||
+    isTextBracket(token) ||
+    isEmptyBracket(token)
+  );
+}
+
 /** What a token difference does in the game, as one sentence. Errors name
  * the consequence; warnings end with "Fine if intended." Mirrors Rust
  * `tokens::token_consequence` word for word. */
@@ -193,6 +215,8 @@ export function tokenConsequence(
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
       : "Fine if intended.";
+  if (severity !== "error" && !hasWarningText(token))
+    return "In a letter the game shows it as plain text. Fine if intended.";
   if (isPageToken(token) && severity === "error" && pagesCounted)
     return "A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show.";
   if (token === "#$b#")
@@ -206,7 +230,9 @@ export function tokenConsequence(
   if (token === "||")
     return "It splits the dialogue into versions that change every week, so players would see the wrong text.";
   if (isEmptyBracket(token))
-    return 'The game cannot read an empty [], so the dialogue shows only "..." or the letter cannot be opened.';
+    return missing
+      ? "The game could not read it in the English text either. Fine if intended."
+      : 'The game cannot read an empty [], so the dialogue shows only "..." or the letter cannot be opened.';
   const command = dialogueCommandConsequence(token);
   if (command !== null && (severity === "error" || isSkippedPage(token)))
     return command;
@@ -249,9 +275,6 @@ export function tokenConsequence(
     return missing
       ? "The game would not insert this value. Fine if intended."
       : "The game fills it in, or shows it as raw text if it does not know it. Fine if intended.";
-  // Only a letter makes dialogue syntax harmless.
-  if (severity !== "error")
-    return "In a letter the game shows it as plain text. Fine if intended.";
   if (token.startsWith("["))
     return missing
       ? "The game would not give this item."
@@ -319,7 +342,10 @@ export function describeTokenIssue(
   translation: string,
 ): TokenIssueMessage[] {
   const messages: TokenIssueMessage[] = [];
-  const pagesCounted = countsPages(translation);
+  // A page-counting command the translation broke still counts.
+  const pagesCounted =
+    countsPages(translation) ||
+    differences.some((difference) => isPageCountingCommand(difference.token));
   const extraOpeners = delta(differences, "${");
   const extraClosers = delta(differences, "}$");
   const switchDamaged = extraOpeners > 0 || extraClosers > 0;
@@ -359,13 +385,12 @@ export function describeTokenIssue(
     if (suggestion !== null) {
       const partner = caseVariantPartner(differences, suggestion);
       if (partner && coversPartner(difference, partner)) merged.add(partner);
+      const error =
+        difference.severity === "error" || partner?.severity === "error";
       messages.push({
-        severity:
-          difference.severity === "error" || partner?.severity === "error"
-            ? "error"
-            : "warning",
+        severity: error ? "error" : "warning",
         kind: "added",
-        message: caseVariantMessage(token, partner),
+        message: caseVariantMessage(token, partner, error),
         token,
       });
       continue;

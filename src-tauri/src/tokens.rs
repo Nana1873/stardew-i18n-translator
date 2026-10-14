@@ -260,7 +260,11 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
     };
     let extra_openers = delta("${");
     let extra_closers = delta("}$");
-    let pages_counted = counts_pages(translation);
+    // A page-counting command the translation broke still counts.
+    let pages_counted = counts_pages(translation)
+        || differences
+            .iter()
+            .any(|difference| is_page_counting_command(&difference.token));
     let mut messages = Vec::new();
     let mut switch_damaged = false;
     if extra_openers > 0 && extra_closers <= 0 {
@@ -289,7 +293,8 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         if let Some(suggestion) = suggestion {
             let partner = case_variant_partner(differences, &suggestion);
             merged.extend(partner.filter(|partner| covers_partner(difference, partner)));
-            messages.push(case_variant_message(token, partner));
+            let error = difference.is_error() || partner.is_some_and(TokenDifference::is_error);
+            messages.push(case_variant_message(token, partner, error));
             continue;
         }
         if switch_damaged
@@ -451,9 +456,13 @@ fn case_variant_partner<'a>(
 /// One finding for a dialogue command typed in the wrong letter case. Only
 /// when the correct command is missing from the translation is it suggested.
 /// Mirrors TS `caseVariantMessage`.
-fn case_variant_message(token: &str, partner: Option<&TokenDifference>) -> String {
+fn case_variant_message(token: &str, partner: Option<&TokenDifference>, error: bool) -> String {
     let text =
         format!("{token} is not a dialogue command the game knows, so it would show as text.");
+    if !error {
+        // Only a letter, where dialogue commands are plain text anyway.
+        return format!("{text} Fine if intended.");
+    }
     let Some(partner) = partner else {
         return text;
     };
@@ -490,6 +499,31 @@ fn counts_pages(value: &str) -> bool {
     value
         .split('#')
         .any(|page| page.starts_with("$1 ") || page.starts_with("$c ") || page.starts_with("$d "))
+}
+
+/// A `$1`, `$c`, or `$d` command token, at the start of the string or after
+/// a `#`. Mirrors TS `isPageCountingCommand`.
+fn is_page_counting_command(token: &str) -> bool {
+    let command = token.strip_prefix('#').unwrap_or(token);
+    command.starts_with("$1 ") || command.starts_with("$c ") || command.starts_with("$d ")
+}
+
+/// Whether a page starts with `$d <check>`, whose two versions are split at
+/// `|` (`Dialogue.parseDialogueString`). Mirrors TS `picksVersion`.
+fn picks_version(value: &str) -> bool {
+    value.split('#').any(|page| page.starts_with("$d "))
+}
+
+/// Warnings with their own explanation; any other warning is dialogue syntax
+/// in a letter. Mirrors TS `hasWarningText`.
+fn has_warning_text(token: &str) -> bool {
+    is_skipped_page(token)
+        || is_malformed_break(token)
+        || matches!(token, "#$b#" | "*" | "[#]")
+        || percent_placeholder_text(token).is_some()
+        || is_placeholder(token)
+        || is_text_bracket(token)
+        || is_empty_bracket(token)
 }
 
 /// Tokens that split dialogue pages, which `$1`, `$c`, and `$d` count.
@@ -569,6 +603,9 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
             "Fine if intended."
         };
     }
+    if !difference.is_error() && !has_warning_text(token) {
+        return "In a letter the game shows it as plain text. Fine if intended.";
+    }
     if is_page_token(token) && difference.is_error() && pages_counted {
         return "A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show.";
     }
@@ -589,7 +626,11 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
         return "It splits the dialogue into versions that change every week, so players would see the wrong text.";
     }
     if is_empty_bracket(token) {
-        return "The game cannot read an empty [], so the dialogue shows only \"...\" or the letter cannot be opened.";
+        return if missing {
+            "The game could not read it in the English text either. Fine if intended."
+        } else {
+            "The game cannot read an empty [], so the dialogue shows only \"...\" or the letter cannot be opened."
+        };
     }
     if let Some(command) = dialogue_command_consequence(token) {
         if difference.is_error() || is_skipped_page(token) {
@@ -658,10 +699,6 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
         } else {
             "The game fills it in, or shows it as raw text if it does not know it. Fine if intended."
         };
-    }
-    if !difference.is_error() {
-        // Only a letter makes dialogue syntax harmless.
-        return "In a letter the game shows it as plain text. Fine if intended.";
     }
     if token.starts_with('[') {
         return if missing {
@@ -833,6 +870,8 @@ fn token_severity(
         // dialogue it only keeps the conversation going.
         || (dropped && token == "{")
         || (dropped && token == MAIL_TITLE)
+        // An empty `[]` already fails in the English text.
+        || (dropped && is_empty_bracket(token))
         || is_text_bracket(token);
     if harmless {
         Severity::Warning
@@ -945,8 +984,9 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
     (source_counts, target_counts) = unify_placeholder_spellings(&source_counts, &target_counts);
     allow_article_for_arguments(&mut source_counts, &target_counts);
     let pages_counted = counts_pages(source) || counts_pages(target);
-    count_dialogue_separators(source, &mut source_counts, pages_counted);
-    count_dialogue_separators(target, &mut target_counts, pages_counted);
+    let versions = picks_version(source) || picks_version(target);
+    count_dialogue_separators(source, &mut source_counts, versions);
+    count_dialogue_separators(target, &mut target_counts, versions);
     let source_has_gender_switch = source_counts
         .keys()
         .any(|token| is_gender_switch_shape(token));
@@ -998,17 +1038,13 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
 /// dialogue a single `|` separates its two versions (`Dialogue.cs`). Both
 /// are counted next to the extracted tokens; elsewhere `|` is plain text.
 /// Mirrors TS `countDialogueSeparators`.
-fn count_dialogue_separators(
-    value: &str,
-    counts: &mut HashMap<String, usize>,
-    pages_counted: bool,
-) {
+fn count_dialogue_separators(value: &str, counts: &mut HashMap<String, usize>, versions: bool) {
     let weekly = value.matches("||").count();
     if weekly > 0 {
         counts.insert("||".to_string(), weekly);
     }
     let single = value.matches('|').count() - 2 * weekly;
-    if pages_counted && single > 0 {
+    if versions && single > 0 {
         counts.insert("|".to_string(), single);
     }
 }

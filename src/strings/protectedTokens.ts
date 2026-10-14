@@ -308,6 +308,8 @@ export function tokenSeverity(
     // dialogue it only keeps the conversation going.
     (dropped && token === "{") ||
     (dropped && token === "[#]") ||
+    // An empty `[]` already fails in the English text.
+    (dropped && isEmptyBracket(token)) ||
     isTextBracket(token);
   return harmless ? "warning" : "error";
 }
@@ -335,6 +337,23 @@ export function countsPages(value: string): boolean {
         page.startsWith("$c ") ||
         page.startsWith("$d "),
     );
+}
+
+/** A `$1`, `$c`, or `$d` command token, at the start of the string or after
+ * a `#`. Mirrors Rust `is_page_counting_command`. */
+export function isPageCountingCommand(token: string): boolean {
+  const command = token.startsWith("#") ? token.slice(1) : token;
+  return (
+    command.startsWith("$1 ") ||
+    command.startsWith("$c ") ||
+    command.startsWith("$d ")
+  );
+}
+
+/** Whether a page starts with `$d <check>`, whose two versions are split at
+ * `|` (`Dialogue.parseDialogueString`). Mirrors Rust `picks_version`. */
+export function picksVersion(value: string): boolean {
+  return value.split("#").some((page) => page.startsWith("$d "));
 }
 
 /** Tokens that split dialogue pages, which `$1`, `$c`, and `$d` count.

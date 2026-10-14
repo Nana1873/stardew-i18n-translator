@@ -991,6 +991,30 @@
       "source": "Hi.%item object 388 5 %%[#]T",
       "target": "Hallo.%item object 389 5 %%[#]T",
       "blocked": true
+    },
+    {
+      "name": "a | in a $c dialogue is plain text",
+      "source": "$c 0.5#A|x#B",
+      "target": "$c 0.5#A x#B",
+      "blocked": false
+    },
+    {
+      "name": "a dropped empty [] is a note",
+      "source": "Hi []",
+      "target": "Hallo",
+      "blocked": false
+    },
+    {
+      "name": "a quick question in a letter is plain text",
+      "source": "Dear @, hi#$y 'a_b_c'[#]Title",
+      "target": "Liebe @, hallo 'a_b_c'[#]Titel",
+      "blocked": false
+    },
+    {
+      "name": "a wrong-case command in a letter is plain text",
+      "source": "Dear @, A#$b#B[#]Title",
+      "target": "Liebe @, A#$B#B[#]Titel",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -1318,6 +1342,21 @@
       "source": "Fine.",
       "target": "好＄。",
       "text": ""
+    },
+    {
+      "source": "$1 flag#Hello#$e#Again",
+      "target": "$1flag#Hallo#Wieder",
+      "text": "# is not in the English text. A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show. #$e# is missing from the translation. A $1, $c, or $d command here counts dialogue pages, so a different line or an empty box would show. The portrait $1 is not in the English text: the character shows a different face. Fine if intended. $1 flag# is missing from the translation. The game needs it to run the dialogue (answers, flags, or events)."
+    },
+    {
+      "source": "Dear @, A#$b#B[#]Title",
+      "target": "Liebe @, A#$B#B[#]Titel",
+      "text": "#$B# is not a dialogue command the game knows, so it would show as text. Fine if intended."
+    },
+    {
+      "source": "Hi []",
+      "target": "Hallo",
+      "text": "[] is missing from the translation. The game could not read it in the English text either. Fine if intended."
     }
   ]
 }

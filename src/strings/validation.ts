@@ -25,6 +25,7 @@ import {
   extractProtectedTokens,
   countsPages,
   pagesWithMultiplePortraits,
+  picksVersion,
   positionalIndex,
   isGenderSwitchShape,
   tokenSeverity,
@@ -341,12 +342,12 @@ function genderViews(body: string): string[] {
 function countDialogueSeparators(
   value: string,
   counts: Map<string, number>,
-  pagesCounted: boolean,
+  versions: boolean,
 ): void {
   const weekly = value.split("||").length - 1;
   if (weekly > 0) counts.set("||", weekly);
   const single = value.split("|").length - 1 - 2 * weekly;
-  if (pagesCounted && single > 0) counts.set("|", single);
+  if (versions && single > 0) counts.set("|", single);
 }
 
 function textDifferences(
@@ -359,8 +360,9 @@ function textDifferences(
     target,
   );
   const pagesCounted = countsPages(source) || countsPages(target);
-  countDialogueSeparators(source, sourceTokens, pagesCounted);
-  countDialogueSeparators(target, targetTokens, pagesCounted);
+  const versions = picksVersion(source) || picksVersion(target);
+  countDialogueSeparators(source, sourceTokens, versions);
+  countDialogueSeparators(target, targetTokens, versions);
   const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
     isGenderSwitchShape,
   );
