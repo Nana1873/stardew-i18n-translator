@@ -8,6 +8,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-10-14
+
 ### Changed
 
 - Setup uses plainer words, groups target languages by whether the game
@@ -20,56 +22,56 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 ### Fixed
 
 - Token checks were verified again against the decompiled Stardew Valley 1.6
-  code, Content Patcher, and Mail Framework Mod. These are now notes, so the
-  string is exported: a dropped or added `#$b#` (the game moves long text into
-  extra boxes itself), a missing value token such as `[FarmName]` or
+  code, Content Patcher, and Mail Framework Mod, down to every explanation the
+  app shows. Only what really breaks in the game still keeps a string out of
+  the export; everything else is a note.
+- These are now notes, so the string is exported: a dropped or added `#$b#`
+  (the game moves long text into extra boxes itself), a missing or extra
+  `#$e#` or `#$k#` page, a missing value token such as `[FarmName]` or
   `[ItemName …]` (only its value is lost), an added `[FarmName]` or
   `[ArticleFor …]`, a repeated `{0}` or an extra copy of a `{{placeholder}}`
   the English text uses, a dropped single `{` (or an added one when the
-  English text has no `{0}`-style placeholders), a `*` in a `$y` reply, a
-  `#$k#` page, an added or dropped `||` weekly split, a missing `$command`
-  inside a line (the game shows it as text in the English line too), a
-  missing `${` or `}$` that was already broken in the English text, a letter
-  without its `[#]` title, and missing dialogue syntax inside a letter. An
-  `%item` that only differs in spacing or the item type's case is no longer a
-  difference.
-- Every explanation was checked against the game code again. Several now
-  say what really happens: a bare `#` or `#$e#` ends the conversation and the
-  rest shows next time, a broken `$y` separator makes the whole dialogue
-  "...", and the two-portraits error only goes to the token that causes it.
-- These still block, and some are new: a `#$b#` replaced by `#`, which ends
-  the conversation there; any page change in a string with `$1`, `$c`, or
-  `$d` (when its versions are split by `#`), which count pages; a changed `|`
-  in a `$d` dialogue; an added empty `[]`, which the game cannot read; new
-  dialogue syntax or bracket tokens in a letter, which show as text there; a `{1}` above the English placeholders; and a
-  value token whose key, name, or item ID was translated, such as
+  English text has no `{0}`-style placeholders), a `*` in a `$y` reply, an
+  added or dropped `||` weekly split, a missing `$command` inside a line (the
+  game shows it as text in the English line too), a missing `${` or `}$` that
+  was already broken in the English text, a letter without its `[#]` title,
+  and missing dialogue syntax inside a letter.
+- These block, and some are new: a `#$b#` replaced by `#`, which ends the
+  conversation there; any page change in a string with `$1` or `$c`, or with
+  `$d` when its versions are split by `#`, because these count pages; a
+  changed `|` in a `$d` dialogue; an added empty `[]`, which the game cannot
+  read; new dialogue syntax or bracket tokens in a letter, which show as text
+  there; a `{1}` above the English placeholders; and a value token whose key,
+  name, or item ID was translated, such as
   `[LocalizedText Strings\Tools:Axe]` turned into
   `[LocalizedText Strings\Werkzeuge:Axt]`, which the game shows as raw text.
+  Translated display text inside a token, such as `[GenderedText er sie]`,
+  is fine.
+- Explanations now say what the game really does: a bare `#` or a `#$e#` page
+  ends the conversation and the rest shows next time, a broken `$y` separator
+  can turn the whole dialogue into "...", and the two-portraits error only goes
+  to the token that causes it.
+- Letters are checked like the game reads them: only the text before the
+  first `[#]` counts, per player gender, so a female version after `¦` is
+  compared on its own and one hidden behind a second `[#]` is a note.
+- Letter background and text color commands (`[letterbg …]`,
+  `[textcolor …]`) are checked too. A missing one or a translated color is a
+  note, because it only changes the look. A command the game does not
+  recognize, such as `[TextColor red]` or `[letterbg zwei]`, blocks, because
+  it would show as text in the letter.
+- An `%item` that only differs in spacing or the item type's case is no
+  longer a difference.
 - AI translation (local and ChatGPT) also retries once when a result loses a
   placeholder, a value token, `@`, or a `%` placeholder such as `%farm`, not
   only for token errors. In a test with 150 real mod strings this nearly
   halved the lost values for about 5% more requests. Other notes still never
   cost a retry. A ChatGPT review or repair that loses such a value is not
   applied, unless it removes a token error.
-- Letter background and text color commands (`[letterbg …]`,
-  `[textcolor …]`) are checked too. A missing one or a translated color is a
-  note, because it only changes the look. A command the game does not
-  recognize, such as `[TextColor red]` or `[letterbg zwei]`, blocks, because
-  it would show as text in the letter.
-- A missing or extra `#$e#` is a note instead of a token error, so the string
-  is exported. Stardew Valley 1.6 skips this command; the old explanation that
-  it ends the conversation was wrong. After a `$1` or `$c` command it still
-  blocks, because the game counts that empty page to pick the next line.
-- A letter translated with a female version after `¦` is checked per player
-  gender, and a female version hidden behind a second `[#]` is a note: the
-  game shows only the text before the first `[#]`, so female players see the
-  male version.
 - The Export… dialog lists only the files an export would really change and
   says when they are already up to date. For All mods with JSON it counted
   every mod with translation files, including mods with nothing translated
-  yet, which the export never touches.
-  The ZIP for all mods names the language like the other exports, such as
-  "German (de)" instead of "de (de)", without its extra note.
+  yet, which the export never touches. The ZIP for all mods names the language
+  like the other exports, such as "German (de)" instead of "de (de)".
 - Setup and the Settings glossary page no longer recommend a rebuild when a
   glossary file from before version 1.4 is still in the data folder but a
   current glossary exists, or when no rebuild is possible because the game
@@ -785,7 +787,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...v2.3.0
