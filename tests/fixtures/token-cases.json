@@ -1141,6 +1141,18 @@
       "source": "Dear @,^Hi[#]T",
       "target": "Liebe @,^Hallo %spouse[#]T",
       "blocked": true
+    },
+    {
+      "name": "a dropped inline $b is a note even with a #$b# page",
+      "source": "Hi$b there#$b#Bye",
+      "target": "Hallo da#$b#Tschüss",
+      "blocked": false
+    },
+    {
+      "name": "a $d dialogue with weekly || versions still counts pages",
+      "source": "$d bus#A#B||$d bus#C#D",
+      "target": "$d bus#A B||$d bus#C#D",
+      "blocked": true
     }
   ],
   "explanations": [
@@ -1298,12 +1310,12 @@
     {
       "source": "a }$ b",
       "target": "a b",
-      "text": "}$ is missing from the translation. The English text has a broken he/she switch here; without it the text shows correctly. Fine if intended."
+      "text": "}$ is missing from the translation. Without it the text reads the same for everyone. Fine if intended."
     },
     {
       "source": "a ${ b",
       "target": "a b",
-      "text": "${ is missing from the translation. The English text has a broken he/she switch here; without it the text shows correctly. Fine if intended."
+      "text": "${ is missing from the translation. Without it the text reads the same for everyone. Fine if intended."
     },
     {
       "source": "Hi#$h$Bye",
@@ -1343,7 +1355,7 @@
     {
       "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
       "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein Schade.'",
-      "text": "_ appears 3 times in the translation instead of 4. It separates the question, answers, and replies of a quick question; with a different count the game cannot read the dialogue and shows only \"...\"."
+      "text": "_ appears 3 times in the translation instead of 4. It separates the question, answers, and replies of a quick question; an odd change makes the game show only \"...\", an even one mixes up answers and replies."
     },
     {
       "source": "$y 'Hungry?_Yes_Here.*Enjoy!'",

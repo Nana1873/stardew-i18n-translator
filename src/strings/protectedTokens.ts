@@ -389,7 +389,13 @@ export function isSkippedPage(token: string): boolean {
  * Mirrors Rust `counts_pages`. */
 export function countsPages(value: string): boolean {
   const hash = value.indexOf("#");
-  const versionsByPipe = hash >= 0 && value.slice(hash + 1).includes("|");
+  // The game splits weekly `||` versions first, so `||` is no separator.
+  const versionsByPipe =
+    hash >= 0 &&
+    value
+      .slice(hash + 1)
+      .replaceAll("||", "")
+      .includes("|");
   return value
     .split("#")
     .some(
@@ -408,7 +414,9 @@ export function pageStartCommands(value: string): Set<string> {
   const commands = new Set<string>();
   for (const page of value.split("#")) {
     const word = /^\$[A-Za-z0-9]+/.exec(page);
-    if (word) commands.add(word[0]);
+    // A page that is only the command, such as `#$b#`, is its own token; a
+    // bare `$b` token is then always an inline one.
+    if (word && word[0].length < page.length) commands.add(word[0]);
   }
   return commands;
 }

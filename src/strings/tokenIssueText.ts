@@ -240,8 +240,12 @@ export function tokenConsequence(
   if (token === "${" || token === "}$")
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
-      : "The English text has a broken he/she switch here; without it the text shows correctly. Fine if intended.";
-  if (context.letter && !keepsMeaningInLetter(token))
+      : "Without it the text reads the same for everyone. Fine if intended.";
+  if (
+    context.letter &&
+    !keepsMeaningInLetter(token) &&
+    !(severity === "error" && missing)
+  )
     return severity === "error"
       ? "In a letter the game does not read it, so it shows as text."
       : "In a letter the game shows it as plain text. Fine if intended.";
@@ -277,7 +281,7 @@ export function tokenConsequence(
   if (token === "*")
     return "In a quick-question reply it starts a new dialogue box. Fine if intended.";
   if (token === "_")
-    return 'It separates the question, answers, and replies of a quick question; with a different count the game cannot read the dialogue and shows only "...".';
+    return 'It separates the question, answers, and replies of a quick question; an odd change makes the game show only "...", an even one mixes up answers and replies.';
   if (token === "[#]" && !missing && severity !== "error")
     return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
   if (token === "[#]")
@@ -351,7 +355,11 @@ function genericMessage(
   const change = changePhrase(sourceCount, targetCount);
   const { pagesCounted } = context;
   // In a letter only these keep their dialogue meaning.
-  if (context.letter && !keepsMeaningInLetter(token))
+  if (
+    context.letter &&
+    !keepsMeaningInLetter(token) &&
+    !(severity === "error" && missing)
+  )
     return `${token} ${change}. ${tokenConsequence(difference, context)}`;
   if (isGenderSwitchShape(token))
     return missing && !context.translationHasSwitch
@@ -399,16 +407,15 @@ export function describeTokenIssue(
   const pagesCounted =
     countsPages(translation) ||
     differences.some((difference) => isPageCountingCommand(difference.token));
-  const titleError = differences.some(
-    (difference) =>
-      difference.token === "[#]" && difference.severity === "error",
-  );
+  // A letter is an English text with one `[#]` (`mailDifferences`): then the
+  // translation keeps exactly one, or a `[#]` note names that one.
+  const title = differences.find((difference) => difference.token === "[#]");
   const context: ExplainContext = {
     pagesCounted,
     letter:
-      !titleError &&
-      (translation.includes("[#]") ||
-        differences.some((difference) => difference.token === "[#]")),
+      title === undefined
+        ? translation.split("[#]").length - 1 === 1
+        : title.sourceCount === 1 && title.severity !== "error",
     translationHasSwitch: translation.includes("${"),
   };
   const extraOpeners = delta(differences, "${");

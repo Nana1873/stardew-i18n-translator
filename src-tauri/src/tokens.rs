@@ -290,16 +290,17 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         || differences
             .iter()
             .any(|difference| is_page_counting_command(&difference.token));
-    let title_error = differences
+    // A letter is an English text with one `[#]` (`mail_differences`): then
+    // the translation keeps exactly one, or a `[#]` note names that one.
+    let title = differences
         .iter()
-        .any(|difference| difference.token == MAIL_TITLE && difference.is_error());
+        .find(|difference| difference.token == MAIL_TITLE);
     let context = ExplainContext {
         pages_counted,
-        letter: !title_error
-            && (translation.contains(MAIL_TITLE)
-                || differences
-                    .iter()
-                    .any(|difference| difference.token == MAIL_TITLE)),
+        letter: match title {
+            Some(title) => title.source_count == 1 && !title.is_error(),
+            None => translation.matches(MAIL_TITLE).count() == 1,
+        },
         translation_has_switch: translation.contains("${"),
     };
     let mut messages = Vec::new();
@@ -425,7 +426,7 @@ fn difference_message(difference: &TokenDifference, context: ExplainContext) -> 
     let change = change_phrase(difference.source_count, difference.target_count);
     let pages_counted = context.pages_counted;
     // In a letter only these keep their dialogue meaning.
-    if context.letter && !keeps_meaning_in_letter(token) {
+    if context.letter && !keeps_meaning_in_letter(token) && !(difference.is_error() && missing) {
         return format!(
             "{token} {change}. {}",
             token_consequence(difference, context)
@@ -564,9 +565,10 @@ fn is_skipped_page(token: &str) -> bool {
 /// when it has no `|`; only then do its pages count. Mirrors TS
 /// `countsPages`.
 fn counts_pages(value: &str) -> bool {
+    // The game splits weekly `||` versions first, so `||` is no separator.
     let versions_by_pipe = value
         .split_once('#')
-        .is_some_and(|(_, rest)| rest.contains('|'));
+        .is_some_and(|(_, rest)| rest.replace("||", "").contains('|'));
     value.split('#').any(|page| {
         page.starts_with("$1 ")
             || page.starts_with("$c ")
@@ -586,7 +588,9 @@ fn page_start_commands(value: &str) -> std::collections::HashSet<String> {
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric())
                 .collect();
-            (!word.is_empty()).then(|| format!("${word}"))
+            // A page that is only the command, such as `#$b#`, is its own
+            // token; a bare `$b` token is then always an inline one.
+            (!word.is_empty() && word.len() < rest.len()).then(|| format!("${word}"))
         })
         .collect()
 }
@@ -821,10 +825,10 @@ fn token_consequence(difference: &TokenDifference, context: ExplainContext) -> &
         return if difference.is_error() {
             "A he/she switch is not opened and closed properly, so the game would show broken text."
         } else {
-            "The English text has a broken he/she switch here; without it the text shows correctly. Fine if intended."
+            "Without it the text reads the same for everyone. Fine if intended."
         };
     }
-    if context.letter && !keeps_meaning_in_letter(token) {
+    if context.letter && !keeps_meaning_in_letter(token) && !(difference.is_error() && missing) {
         return if difference.is_error() {
             "In a letter the game does not read it, so it shows as text."
         } else {
@@ -882,7 +886,7 @@ fn token_consequence(difference: &TokenDifference, context: ExplainContext) -> &
         return "In a quick-question reply it starts a new dialogue box. Fine if intended.";
     }
     if token == "_" {
-        return "It separates the question, answers, and replies of a quick question; with a different count the game cannot read the dialogue and shows only \"...\".";
+        return "It separates the question, answers, and replies of a quick question; an odd change makes the game show only \"...\", an even one mixes up answers and replies.";
     }
     if token == "[#]" && !missing && !difference.is_error() {
         return "The game shows only the letter text before the first [#], so text after another [#], such as a female version after ¦, never appears. Fine if intended.";
