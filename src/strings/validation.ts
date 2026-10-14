@@ -23,7 +23,9 @@ import {
   articleForArgument,
   branchText,
   extractProtectedTokens,
+  bracketKey,
   countsPages,
+  isTextBracket,
   pagesWithMultiplePortraits,
   picksVersion,
   positionalIndex,
@@ -376,6 +378,9 @@ function textDifferences(
     addsPageBreaks: (targetTokens.get("#") ?? 0) > (sourceTokens.get("#") ?? 0),
     maxPositional: positions.length > 0 ? Math.max(...positions) : null,
     letter,
+    sourceBracketKeys: new Set(
+      [...sourceTokens.keys()].filter(isTextBracket).map(bracketKey),
+    ),
   };
   const differences: TokenDifference[] = [];
   const addDifference = (

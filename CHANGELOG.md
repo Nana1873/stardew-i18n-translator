@@ -33,13 +33,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   the conversation there; any page change in a string with `$1`, `$c`, or
   `$d`, which count pages; a changed `|` in a `$d` dialogue; an empty `[]`,
   which the game cannot read; a `{1}` above the English placeholders; and a
-  value token whose name or key was translated, such as
+  value token whose key, name, or item ID was translated, such as
   `[LocalizedText Strings\Tools:Axe]` turned into
   `[LocalizedText Strings\Werkzeuge:Axt]`, which the game shows as raw text.
 - AI translation (local and ChatGPT) also retries once when a result loses a
-  placeholder, a value token, or `@`, not only for token errors. In a test
-  with 150 real mod strings this halved the lost values for about 5% more
-  requests. Other notes still never cost a retry.
+  placeholder, a value token, `@`, or a `%` placeholder such as `%farm`, not
+  only for token errors. In a test with 150 real mod strings this nearly
+  halved the lost values for about 5% more requests. Other notes still never
+  cost a retry. A ChatGPT review or repair that loses such a value is not
+  applied, unless it removes a token error.
 - A missing or extra `#$e#` is a note instead of a token error, so the string
   is exported. Stardew Valley 1.6 skips this command; the old explanation that
   it ends the conversation was wrong. After a `$1` or `$c` command it still

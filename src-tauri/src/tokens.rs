@@ -589,10 +589,11 @@ fn is_text_bracket(token: &str) -> bool {
     token.starts_with('[') && !is_logic_bracket(token) && !is_empty_bracket(token)
 }
 
-/// Bracket tokens the game resolves in any text: built-in values without
+/// Bracket tokens `TokenParser` always resolves: built-in values without
 /// arguments, and `[ArticleFor …]`, which is empty in other languages. Any
-/// other new bracket token may not resolve, and then `TokenParser` leaves it
-/// as raw text. Mirrors TS `alwaysResolves`.
+/// other new bracket token may not resolve, and then it is left as raw text.
+/// `[SuggestedItem]` only resolves in shop dialogue (`ShopMenu`), so it is
+/// not one of them. Mirrors TS `alwaysResolves`.
 fn always_resolves(token: &str) -> bool {
     let Some(body) = token
         .strip_prefix('[')
@@ -606,13 +607,88 @@ fn always_resolves(token: &str) -> bool {
         || (arguments.is_empty()
             && matches!(
                 name.as_str(),
-                "dayofmonth"
-                    | "farmeruniqueid"
-                    | "farmname"
-                    | "season"
-                    | "positiveadjective"
-                    | "suggesteditem"
+                "dayofmonth" | "farmeruniqueid" | "farmname" | "season" | "positiveadjective"
             ))
+}
+
+/// What makes a bracket token resolve: its name plus its key, name, or item
+/// ID (the first argument). Tokens whose arguments are visible text, and the
+/// fallback text of `[ItemName …]` or the format values of
+/// `[LocalizedText …]`, may be translated, so they are not part of it.
+/// Mirrors TS `bracketKey`.
+fn bracket_key(token: &str) -> String {
+    let body = token
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(token);
+    let (name, arguments) = split_bracket_name(body);
+    let name = name.to_ascii_lowercase();
+    if matches!(
+        name.as_str(),
+        "genderedtext"
+            | "spousefarmertext"
+            | "spousegenderedtext"
+            | "capitalizefirstletter"
+            | "escapedtext"
+    ) {
+        return name;
+    }
+    match arguments.split_whitespace().next() {
+        Some(key) => format!("{name} {key}"),
+        None => name,
+    }
+}
+
+/// Whether `candidate` is a better AI result than `previous`, both as
+/// [`repair_differences`]: no error moves further from its English count,
+/// and either the errors shrink or they stay and the lost values shrink
+/// without one getting worse. A result that removes errors wins even if it
+/// loses a value.
+pub fn repair_improves(previous: &[TokenDifference], candidate: &[TokenDifference]) -> bool {
+    let (previous_errors, previous_values) = split_errors(previous);
+    let (candidate_errors, candidate_values) = split_errors(candidate);
+    if worsens(&previous_errors, &candidate_errors) {
+        return false;
+    }
+    let total = |items: &[&TokenDifference]| items.iter().map(|item| distance(item)).sum::<usize>();
+    total(&candidate_errors) < total(&previous_errors)
+        || (total(&candidate_errors) == total(&previous_errors)
+            && !worsens(&previous_values, &candidate_values)
+            && total(&candidate_values) < total(&previous_values))
+}
+
+/// Whether `candidate` is a worse AI result than `previous`, both as
+/// [`repair_differences`]: an error moves further from its English count, or
+/// the errors stay and a lost value gets worse.
+pub fn repair_worsens(previous: &[TokenDifference], candidate: &[TokenDifference]) -> bool {
+    let (previous_errors, previous_values) = split_errors(previous);
+    let (candidate_errors, candidate_values) = split_errors(candidate);
+    let total = |items: &[&TokenDifference]| items.iter().map(|item| distance(item)).sum::<usize>();
+    worsens(&previous_errors, &candidate_errors)
+        || (total(&candidate_errors) >= total(&previous_errors)
+            && worsens(&previous_values, &candidate_values))
+}
+
+fn split_errors(differences: &[TokenDifference]) -> (Vec<&TokenDifference>, Vec<&TokenDifference>) {
+    differences
+        .iter()
+        .partition(|difference| difference.is_error())
+}
+
+fn distance(difference: &TokenDifference) -> usize {
+    difference.source_count.abs_diff(difference.target_count)
+}
+
+/// Whether any token in `candidate` is further from its English count than in
+/// `previous`; a token `previous` does not list counts as zero there.
+fn worsens(previous: &[&TokenDifference], candidate: &[&TokenDifference]) -> bool {
+    candidate.iter().any(|difference| {
+        let before = previous
+            .iter()
+            .find(|item| item.token == difference.token)
+            .map_or(0, |item| distance(item));
+        distance(difference) > before
+    })
 }
 
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors
@@ -849,7 +925,7 @@ fn is_placeholder(token: &str) -> bool {
 
 /// What a comparison knows about the whole string, for [`token_severity`].
 /// Mirrors TS `SeverityContext`.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct SeverityContext {
     /// The translation puts two different portraits on one page.
     introduces_multiple_portraits: bool,
@@ -862,6 +938,8 @@ struct SeverityContext {
     /// A letter: only the text before `[#]` is shown and dialogue syntax is
     /// plain text there (`LetterViewerMenu`).
     letter: bool,
+    /// The [`bracket_key`] of every bracket token in the English text.
+    source_bracket_keys: std::collections::HashSet<String>,
 }
 
 fn positional_index(token: &str) -> Option<u64> {
@@ -885,7 +963,7 @@ fn token_severity(
     token: &str,
     source_count: usize,
     target_count: usize,
-    context: SeverityContext,
+    context: &SeverityContext,
 ) -> Severity {
     let dropped = target_count < source_count;
     if context.letter && !acts_in_letter(token) {
@@ -930,7 +1008,10 @@ fn token_severity(
         // A missing value token only drops its value. A new one that is not
         // in the English text may not resolve and then shows as raw text.
         || (is_text_bracket(token)
-            && (dropped || source_count > 0 || always_resolves(token)));
+            && (dropped
+                || source_count > 0
+                || always_resolves(token)
+                || context.source_bracket_keys.contains(&bracket_key(token))));
     if harmless {
         Severity::Warning
     } else {
@@ -1059,6 +1140,11 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
             .filter_map(|token| positional_index(token))
             .max(),
         letter,
+        source_bracket_keys: source_counts
+            .keys()
+            .filter(|token| is_text_bracket(token))
+            .map(|token| bracket_key(token))
+            .collect(),
     };
     let mut tokens: Vec<String> = source_counts
         .keys()
@@ -1083,7 +1169,7 @@ fn text_differences(source: &str, target: &str, letter: bool) -> Vec<TokenDiffer
                 return None;
             }
             (source_count != target_count).then(|| TokenDifference {
-                severity: token_severity(&token, source_count, target_count, context),
+                severity: token_severity(&token, source_count, target_count, &context),
                 token,
                 source_count,
                 target_count,
@@ -2233,6 +2319,22 @@ mod tests {
             .into_iter()
             .map(|difference| (difference.token, difference.severity))
             .collect()
+    }
+
+    #[test]
+    fn repair_comparison_puts_errors_before_lost_values() {
+        let source = "Hi {{name}}, @!";
+        let repair = |target: &str| repair_differences(source, target);
+        // Removing an error wins although `@` is lost.
+        let blocking = repair("Hallo {{other}}, @!");
+        let fixed = repair("Hallo {{name}}!");
+        assert!(repair_improves(&blocking, &fixed));
+        assert!(!repair_worsens(&blocking, &fixed));
+        // With the same errors, losing another value is worse.
+        let clean = repair("Hallo {{name}}, @!");
+        assert!(repair_worsens(&clean, &fixed));
+        assert!(!repair_improves(&clean, &fixed));
+        assert!(repair_improves(&fixed, &clean));
     }
 
     #[test]

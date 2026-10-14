@@ -143,9 +143,11 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   flag `$1 metHarvey#`), the `_` separators inside a `$y '…'` quick response,
   a single `}` and an added single `{`, mail `%item`/`%action ... %%` (spacing
   and the item type's case are ignored), item brackets such as `[128]` that
-  give an item in dialogue, an empty `[]`, a bracket token that is not in the
-  English text (such as a `[LocalizedText …]` or `[CharacterName …]` whose key
-  or name was translated, which the game shows as raw text), renamed or added
+  give an item in dialogue, an empty `[]`, a bracket token whose name or key,
+  name, or item ID argument is not in the English text (such as a
+  `[LocalizedText …]` or `[CharacterName …]` whose key or name was translated,
+  which the game shows as raw text; translated text arguments of tokens such as
+  `[GenderedText …]` or an `[ItemName …]` fallback are fine), renamed or added
   `{{placeholders}}`, a `{n}` above the highest index in the English text, and
   a second, different portrait command on one dialogue page for either player
   gender (the game removes every copy of the one it applies, so a repeated

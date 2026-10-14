@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Map, Value};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     future::Future,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -362,26 +362,14 @@ fn merge_followup(
     merged
 }
 
-/// True when any error or lost value in `candidate` is further from its source
-/// count than in `previous`. A token missing from the source counts as zero there, so
-/// a new foreign token is rejected unless `previous` had at least as many.
+/// True when `candidate` damages a token more than `previous`: an error moves
+/// further from its English count, or the errors stay and a lost value gets
+/// worse. A candidate that removes errors is kept even if it loses a value.
 fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> bool {
-    let distance = |difference: &crate::tokens::TokenDifference| {
-        difference.source_count.abs_diff(difference.target_count)
-    };
-    let previous_distances = crate::tokens::repair_differences(source, previous)
-        .iter()
-        .map(|difference| (difference.token.clone(), distance(difference)))
-        .collect::<HashMap<_, _>>();
-    crate::tokens::repair_differences(source, candidate)
-        .iter()
-        .any(|difference| {
-            distance(difference)
-                > previous_distances
-                    .get(&difference.token)
-                    .copied()
-                    .unwrap_or(0)
-        })
+    crate::tokens::repair_worsens(
+        &crate::tokens::repair_differences(source, previous),
+        &crate::tokens::repair_differences(source, candidate),
+    )
 }
 
 async fn execute_review_plans<F, Fut>(

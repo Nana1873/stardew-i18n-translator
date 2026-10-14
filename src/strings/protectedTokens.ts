@@ -245,6 +245,8 @@ export interface SeverityContext {
   /** A letter: only the text before `[#]` is shown and dialogue syntax is
    * plain text there (`LetterViewerMenu`). */
   letter: boolean;
+  /** The `bracketKey` of every bracket token in the English text. */
+  sourceBracketKeys: Set<string>;
 }
 
 export function positionalIndex(token: string): number | null {
@@ -315,7 +317,10 @@ export function tokenSeverity(
     // A missing value token only drops its value. A new one that is not in
     // the English text may not resolve and then shows as raw text.
     (isTextBracket(token) &&
-      (dropped || sourceCount > 0 || alwaysResolves(token)));
+      (dropped ||
+        sourceCount > 0 ||
+        alwaysResolves(token) ||
+        context.sourceBracketKeys.has(bracketKey(token))));
   return harmless ? "warning" : "error";
 }
 
@@ -410,13 +415,36 @@ const ALWAYS_RESOLVING_TOKENS = new Set([
   "farmname",
   "season",
   "positiveadjective",
-  "suggesteditem",
 ]);
 
-/** Bracket tokens the game resolves in any text: built-in values without
+const TEXT_ARGUMENT_TOKENS = new Set([
+  "genderedtext",
+  "spousefarmertext",
+  "spousegenderedtext",
+  "capitalizefirstletter",
+  "escapedtext",
+]);
+
+/** What makes a bracket token resolve: its name plus its key, name, or item
+ * ID (the first argument). Tokens whose arguments are visible text, and the
+ * fallback text of `[ItemName …]` or the format values of
+ * `[LocalizedText …]`, may be translated, so they are not part of it.
+ * Mirrors Rust `bracket_key`. */
+export function bracketKey(token: string): string {
+  const body =
+    token.startsWith("[") && token.endsWith("]") ? token.slice(1, -1) : token;
+  const { name, arguments: argumentText } = splitBracketName(body);
+  const lower = name.toLowerCase();
+  if (TEXT_ARGUMENT_TOKENS.has(lower)) return lower;
+  const key = argumentText.split(/\s+/).find(Boolean);
+  return key === undefined ? lower : `${lower} ${key}`;
+}
+
+/** Bracket tokens `TokenParser` always resolves: built-in values without
  * arguments, and `[ArticleFor …]`, which is empty in other languages. Any
- * other new bracket token may not resolve, and then `TokenParser` leaves it
- * as raw text. Mirrors Rust `always_resolves`. */
+ * other new bracket token may not resolve, and then it is left as raw text.
+ * `[SuggestedItem]` only resolves in shop dialogue (`ShopMenu`), so it is
+ * not one of them. Mirrors Rust `always_resolves`. */
 function alwaysResolves(token: string): boolean {
   if (!token.startsWith("[") || !token.endsWith("]")) return false;
   const { name, arguments: argumentText } = splitBracketName(

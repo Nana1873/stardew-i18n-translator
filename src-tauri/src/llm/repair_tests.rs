@@ -115,7 +115,7 @@ fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0]["messages"][1], requests[1]["messages"][1]);
         let reminder = requests[1]["messages"][0]["content"].as_str().unwrap();
-        for difference in tokens::blocking_differences(source, first) {
+        for difference in tokens::repair_differences(source, first) {
             let token = serde_json::to_string(&difference.token).unwrap();
             assert!(reminder.contains(&format!(
                 "{token}: expected {}, previous response {}",

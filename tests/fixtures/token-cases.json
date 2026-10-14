@@ -1039,6 +1039,30 @@
       "source": "Bring [SuggestedItem].",
       "target": "Bring [ArticleFor [SuggestedItem]] mit.",
       "blocked": false
+    },
+    {
+      "name": "a translated GenderedText argument is a note",
+      "source": "He said [GenderedText he she] would come.",
+      "target": "Er sagte, [GenderedText er sie] komme.",
+      "blocked": false
+    },
+    {
+      "name": "a translated ItemName fallback is a note",
+      "source": "[ItemName (O)128 Pufferfish] here",
+      "target": "[ItemName (O)128 Kugelfisch] hier",
+      "blocked": false
+    },
+    {
+      "name": "a translated LocalizedText format value is a note",
+      "source": "[LocalizedText Strings/UI:Key Wizard]",
+      "target": "[LocalizedText Strings/UI:Key Zauberer]",
+      "blocked": false
+    },
+    {
+      "name": "an added SuggestedItem outside its English text blocks",
+      "source": "Welcome!",
+      "target": "Willkommen! [SuggestedItem]",
+      "blocked": true
     }
   ],
   "explanations": [

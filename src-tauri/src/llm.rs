@@ -739,7 +739,7 @@ pub async fn translate_with_context(
     let second = decode_translation_string(source, second);
     let second_differences = tokens::repair_differences(source, &second);
 
-    if improves_token_counts(&differences, &second_differences) {
+    if tokens::repair_improves(&differences, &second_differences) {
         Ok(result(second))
     } else {
         Ok(result(first))
