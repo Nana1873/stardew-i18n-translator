@@ -8,7 +8,7 @@ or a ready-to-install ZIP. Free and open source.
 Why I made this: I wanted a way to translate mods without having to worry about
 mistyping or misreading a token somewhere. And for really big mods, say 3,000
 strings, you can let AI do a first pass and then check everything yourself in
-Review, so some of the work is taken off your hands.
+Review, so AI takes some of the work off your hands.
 
 [Download the latest release](https://github.com/Nana1873/stardew-i18n-translator/releases/latest) ·
 [Nexus Mods](https://www.nexusmods.com/stardewvalley/mods/47653) ·
@@ -101,11 +101,14 @@ moving the app.** See [updates and backups](docs/troubleshooting.md#updating-and
 
 ## Optional AI
 
-AI is optional and stays off until you set it up: a local model (LM Studio or
-Ollama), your ChatGPT plan, or an LLM batch file you hand to any other tool.
-Every AI result lands in **Review** and is never marked Done on its own. Export
-still includes Review text, so look it over first. The [AI guide](docs/ai.md)
-covers setup, quality options, and exactly what is sent.
+AI is optional, and none of it runs until you choose it. You can use a local
+model (LM Studio or Ollama, on your computer only), your ChatGPT plan through a
+browser sign-in (no API key or extra tools), or an LLM batch file you hand to
+any other tool; imported batches are checked for outdated text, wrong keys, and
+tokens, and never overwrite translations you already have. Every AI result
+lands in **Review** and is never marked Done on its own. Export still includes
+Review text, so look it over first. The [AI guide](docs/ai.md) covers setup,
+quality options, and exactly what is sent.
 
 ## Languages and files
 
@@ -124,9 +127,10 @@ covers setup, quality options, and exactly what is sent.
 Scanning, manual editing, glossary generation, validation, and export happen
 locally. The app has no accounts, analytics, or telemetry.
 
-The optional AI features only send the strings you select (with a little
-context) to the service you chose; the [AI guide](docs/ai.md#data-and-privacy) has the
-details.
+Local AI stays on your computer. ChatGPT sends the strings you translate and
+nearby context directly to OpenAI. LLM batch files leave your computer only
+when you upload them yourself. Details are in the
+[AI guide](docs/ai.md#data-and-privacy).
 
 ## Help and contribute
 
