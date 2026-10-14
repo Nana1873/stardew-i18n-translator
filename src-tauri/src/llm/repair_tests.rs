@@ -92,6 +92,9 @@ fn translate(source: &str, replies: &[&str]) -> (TranslationResult, Vec<serde_js
 fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
     for (source, first, repaired) in [
         ("Hello [128]!", "Hallo!", "Hallo [128]!"),
+        // A lost value is retried too, although it alone does not block.
+        ("Hello [FarmName]!", "Hallo!", "Hallo [FarmName]!"),
+        ("Hi {{name}}, @!", "Hallo!", "Hallo {{name}}, @!"),
         ("Hello [128]!", "Hallo [128] [129]!", "Hallo [128]!"),
         ("Hello [128]!", "Hallo [128] [128]!", "Hallo [128]!"),
         (

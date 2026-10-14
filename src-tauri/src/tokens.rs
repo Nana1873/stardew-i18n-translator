@@ -239,6 +239,31 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
+/// The differences an AI translation is asked to fix in one more attempt:
+/// every error, plus a missing value the game would have filled in (a
+/// placeholder, a value bracket token, `@`, or a `%` placeholder). Other
+/// warnings are translation choices and never cost a request.
+pub fn repair_differences(source: &str, target: &str) -> Vec<TokenDifference> {
+    token_differences(source, target)
+        .into_iter()
+        .filter(|difference| {
+            difference.is_error()
+                || (difference.target_count < difference.source_count
+                    && carries_value(&difference.token))
+        })
+        .collect()
+}
+
+/// A token the game replaces with a value, so a translation without it
+/// loses that value. `[ArticleFor …]` is empty in other languages and
+/// `%noturn` is removed, so neither carries one.
+fn carries_value(token: &str) -> bool {
+    is_placeholder(token)
+        || token == "@"
+        || (percent_placeholder_text(token).is_some() && token != "%noturn")
+        || (is_text_bracket(token) && !token.to_ascii_lowercase().starts_with("[articlefor"))
+}
+
 /// Token characters an LLM or a CJK keyboard may write as their full-width
 /// look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors TS
 /// `FULL_WIDTH_LOOKALIKES`.
@@ -564,6 +589,32 @@ fn is_text_bracket(token: &str) -> bool {
     token.starts_with('[') && !is_logic_bracket(token) && !is_empty_bracket(token)
 }
 
+/// Bracket tokens the game resolves in any text: built-in values without
+/// arguments, and `[ArticleFor …]`, which is empty in other languages. Any
+/// other new bracket token may not resolve, and then `TokenParser` leaves it
+/// as raw text. Mirrors TS `alwaysResolves`.
+fn always_resolves(token: &str) -> bool {
+    let Some(body) = token
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let (name, arguments) = split_bracket_name(body);
+    let name = name.to_ascii_lowercase();
+    name == "articlefor"
+        || (arguments.is_empty()
+            && matches!(
+                name.as_str(),
+                "dayofmonth"
+                    | "farmeruniqueid"
+                    | "farmname"
+                    | "season"
+                    | "positiveadjective"
+                    | "suggesteditem"
+            ))
+}
+
 /// What a dialogue break or command does, or `None` for other tokens. Mirrors
 /// TS `dialogueCommandConsequence`.
 fn dialogue_command_consequence(token: &str) -> Option<&'static str> {
@@ -696,8 +747,10 @@ fn token_consequence(difference: &TokenDifference, pages_counted: bool) -> &'sta
     if is_text_bracket(token) {
         return if missing {
             "The game would not insert this value. Fine if intended."
+        } else if difference.is_error() {
+            "If the game cannot resolve it, for example because its name or key was translated, players see it as raw text."
         } else {
-            "The game fills it in, or shows it as raw text if it does not know it. Fine if intended."
+            "The game fills it in. Fine if intended."
         };
     }
     if token.starts_with('[') {
@@ -874,7 +927,10 @@ fn token_severity(
         || token == "||"
         // An empty `[]` already fails in the English text.
         || (dropped && is_empty_bracket(token))
-        || is_text_bracket(token);
+        // A missing value token only drops its value. A new one that is not
+        // in the English text may not resolve and then shows as raw text.
+        || (is_text_bracket(token)
+            && (dropped || source_count > 0 || always_resolves(token)));
     if harmless {
         Severity::Warning
     } else {
@@ -2177,6 +2233,29 @@ mod tests {
             .into_iter()
             .map(|difference| (difference.token, difference.severity))
             .collect()
+    }
+
+    #[test]
+    fn repair_differences_keep_errors_and_lost_values_only() {
+        let tokens = |source: &str, target: &str| -> Vec<String> {
+            repair_differences(source, target)
+                .into_iter()
+                .map(|difference| difference.token)
+                .collect()
+        };
+        assert_eq!(
+            tokens("Hello [FarmName], {{name}} and @!", "Hallo!"),
+            vec!["@", "[FarmName]", "{{name}}"]
+        );
+        assert_eq!(tokens("Here.[128]", "Hier."), vec!["[128]"]);
+        // Translation choices never cost a retry.
+        assert!(tokens("Hi.$h#$b#Bye.", "Hallo. Tschüss.").is_empty());
+        assert!(tokens(
+            "Bring [ArticleFor [SuggestedItem]].",
+            "Bring [SuggestedItem]."
+        )
+        .is_empty());
+        assert!(tokens("Wait, %noturn friend.", "Warte, Freund.").is_empty());
     }
 
     #[test]

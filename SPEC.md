@@ -143,7 +143,9 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   flag `$1 metHarvey#`), the `_` separators inside a `$y '…'` quick response,
   a single `}` and an added single `{`, mail `%item`/`%action ... %%` (spacing
   and the item type's case are ignored), item brackets such as `[128]` that
-  give an item in dialogue, an empty `[]`, renamed or added
+  give an item in dialogue, an empty `[]`, a bracket token that is not in the
+  English text (such as a `[LocalizedText …]` or `[CharacterName …]` whose key
+  or name was translated, which the game shows as raw text), renamed or added
   `{{placeholders}}`, a `{n}` above the highest index in the English text, and
   a second, different portrait command on one dialogue page for either player
   gender (the game removes every copy of the one it applies, so a repeated
@@ -156,9 +158,10 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   `%farm`, `%favorite`, `%year`, `%kid1`, `%kid2`, `%season`, and `%noturn`
   (missing, added, or renamed; the game replaces only the exact lowercase
   name, so `%Spouse` stays text, and a percent sign such as `50%` is never
-  one), a dropped placeholder, a repeated `{n}`, value tokens such as
-  `[FarmName]`, `[ItemName …]`, or `[ArticleFor …]` (missing, added, or
-  renamed; an unknown one stays visible as text), a dropped or added `#$b#`
+  one), a dropped placeholder, a repeated `{n}`, a missing value token such as
+  `[FarmName]` or `[ItemName …]`, an extra copy of one in the English text, an
+  added built-in value without arguments such as `[FarmName]` or `[Season]`, an
+  added `[ArticleFor …]`, a dropped or added `#$b#`
   (the game moves long text into extra boxes itself), a `*` in a `$y` reply,
   `#$e#` and a `#$k#` page (the game skips both), a changed `||` weekly split, a dropped single `{`, and a
   changed bare `^` or `#` that does not put two different portraits on one

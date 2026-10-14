@@ -1015,6 +1015,30 @@
       "source": "Dear @, A#$b#B[#]Title",
       "target": "Liebe @, A#$B#B[#]Titel",
       "blocked": false
+    },
+    {
+      "name": "a value token with a translated key blocks",
+      "source": "[LocalizedText Strings\\Tools:Axe_Description]",
+      "target": "[LocalizedText Strings\\Werkzeuge:Axt_Beschreibung]",
+      "blocked": true
+    },
+    {
+      "name": "a value token with a translated argument blocks",
+      "source": "[CharacterName Wizard] says hi.",
+      "target": "[CharacterName Zauberer] sagt hallo.",
+      "blocked": true
+    },
+    {
+      "name": "an added built-in value without arguments is a note",
+      "source": "Welcome!",
+      "target": "Willkommen auf [FarmName]!",
+      "blocked": false
+    },
+    {
+      "name": "an added ArticleFor around an English token is a note",
+      "source": "Bring [SuggestedItem].",
+      "target": "Bring [ArticleFor [SuggestedItem]] mit.",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -1357,6 +1381,11 @@
       "source": "Hi []",
       "target": "Hallo",
       "text": "[] is missing from the translation. The game could not read it in the English text either. Fine if intended."
+    },
+    {
+      "source": "[CharacterName Wizard] says hi.",
+      "target": "[CharacterName Zauberer] sagt hallo.",
+      "text": "[CharacterName Wizard] is missing from the translation. The game would not insert this value. Fine if intended. [CharacterName Zauberer] is not in the English text. If the game cannot resolve it, for example because its name or key was translated, players see it as raw text."
     }
   ]
 }

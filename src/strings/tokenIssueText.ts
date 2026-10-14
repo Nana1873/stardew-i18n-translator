@@ -275,7 +275,9 @@ export function tokenConsequence(
   if (isTextBracket(token))
     return missing
       ? "The game would not insert this value. Fine if intended."
-      : "The game fills it in, or shows it as raw text if it does not know it. Fine if intended.";
+      : severity === "error"
+        ? "If the game cannot resolve it, for example because its name or key was translated, players see it as raw text."
+        : "The game fills it in. Fine if intended.";
   if (token.startsWith("["))
     return missing
       ? "The game would not give this item."

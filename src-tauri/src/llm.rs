@@ -712,9 +712,9 @@ pub async fn translate_with_context(
     )
     .await?;
     let first = decode_translation_string(source, first);
-    // Only game-breaking differences justify a retry; warnings stay visible in
-    // Review without spending another request.
-    let differences = tokens::blocking_differences(source, &first);
+    // Errors and lost values (placeholders, value tokens, `@`) justify one
+    // retry; other warnings stay visible in Review without another request.
+    let differences = tokens::repair_differences(source, &first);
     if differences.is_empty() {
         return Ok(result(first));
     }
@@ -737,7 +737,7 @@ pub async fn translate_with_context(
     )
     .await?;
     let second = decode_translation_string(source, second);
-    let second_differences = tokens::blocking_differences(source, &second);
+    let second_differences = tokens::repair_differences(source, &second);
 
     if improves_token_counts(&differences, &second_differences) {
         Ok(result(second))

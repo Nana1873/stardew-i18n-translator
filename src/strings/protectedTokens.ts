@@ -312,7 +312,10 @@ export function tokenSeverity(
     token === "||" ||
     // An empty `[]` already fails in the English text.
     (dropped && isEmptyBracket(token)) ||
-    isTextBracket(token);
+    // A missing value token only drops its value. A new one that is not in
+    // the English text may not resolve and then shows as raw text.
+    (isTextBracket(token) &&
+      (dropped || sourceCount > 0 || alwaysResolves(token)));
   return harmless ? "warning" : "error";
 }
 
@@ -398,6 +401,31 @@ function isLogicBracket(token: string): boolean {
 export function isTextBracket(token: string): boolean {
   return (
     token.startsWith("[") && !isLogicBracket(token) && !isEmptyBracket(token)
+  );
+}
+
+const ALWAYS_RESOLVING_TOKENS = new Set([
+  "dayofmonth",
+  "farmeruniqueid",
+  "farmname",
+  "season",
+  "positiveadjective",
+  "suggesteditem",
+]);
+
+/** Bracket tokens the game resolves in any text: built-in values without
+ * arguments, and `[ArticleFor …]`, which is empty in other languages. Any
+ * other new bracket token may not resolve, and then `TokenParser` leaves it
+ * as raw text. Mirrors Rust `always_resolves`. */
+function alwaysResolves(token: string): boolean {
+  if (!token.startsWith("[") || !token.endsWith("]")) return false;
+  const { name, arguments: argumentText } = splitBracketName(
+    token.slice(1, -1),
+  );
+  const lower = name.toLowerCase();
+  return (
+    lower === "articlefor" ||
+    (argumentText.length === 0 && ALWAYS_RESOLVING_TOKENS.has(lower))
   );
 }
 
