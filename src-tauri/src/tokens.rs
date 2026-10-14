@@ -825,7 +825,7 @@ fn token_consequence(difference: &TokenDifference, context: ExplainContext) -> &
         return if difference.is_error() {
             "A he/she switch is not opened and closed properly, so the game would show broken text."
         } else {
-            "Without it the text reads the same for everyone. Fine if intended."
+            "The English text has no working he/she switch here, so nothing breaks without it. Fine if intended."
         };
     }
     if context.letter && !keeps_meaning_in_letter(token) && !(difference.is_error() && missing) {

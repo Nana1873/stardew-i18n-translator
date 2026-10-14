@@ -1310,12 +1310,12 @@
     {
       "source": "a }$ b",
       "target": "a b",
-      "text": "}$ is missing from the translation. Without it the text reads the same for everyone. Fine if intended."
+      "text": "}$ is missing from the translation. The English text has no working he/she switch here, so nothing breaks without it. Fine if intended."
     },
     {
       "source": "a ${ b",
       "target": "a b",
-      "text": "${ is missing from the translation. Without it the text reads the same for everyone. Fine if intended."
+      "text": "${ is missing from the translation. The English text has no working he/she switch here, so nothing breaks without it. Fine if intended."
     },
     {
       "source": "Hi#$h$Bye",

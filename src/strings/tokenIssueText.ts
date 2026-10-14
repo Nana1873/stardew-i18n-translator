@@ -240,7 +240,7 @@ export function tokenConsequence(
   if (token === "${" || token === "}$")
     return severity === "error"
       ? "A he/she switch is not opened and closed properly, so the game would show broken text."
-      : "Without it the text reads the same for everyone. Fine if intended.";
+      : "The English text has no working he/she switch here, so nothing breaks without it. Fine if intended.";
   if (
     context.letter &&
     !keepsMeaningInLetter(token) &&
