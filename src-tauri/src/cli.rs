@@ -21,8 +21,8 @@ use crate::{detection, export, glossary, language, portable_profile, scanner, se
 pub const STRINGS_FORMAT: &str = "stardew-translator-strings";
 pub const STRINGS_VERSION: u64 = 1;
 
-/// Exit codes: success, failure, invalid usage, and a completed write in which
-/// some strings were rejected.
+/// Exit codes: success, failure, invalid usage, and a completed command in
+/// which some strings were rejected (any valid ones were saved).
 const EXIT_OK: i32 = 0;
 const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
@@ -43,12 +43,13 @@ Commands:
        (comma-separated; default untranslated,outdated).
   check <file>                 Validate a strings file without saving anything.
   push <file> [--status <s>]   Save the translations in a strings file.
-       --status translated (default) or review-needed.
+       --status translated (default) or review-needed. A changed (outdated)
+       string sent back unedited stays changed; confirm it with done.
   done --mod <id> (--keys <k1,k2> | --all) [--file <dir>]
                                Mark saved translations as translated. --all
                                takes every review-needed string.
-  undo [<id>] [--list]         Undo the latest (or the given) push, done, or
-                               undo-able change; --list shows them.
+  undo [<id>] [--list]         Undo the latest (or the given) push or done;
+                               --list shows them.
   export (--mod <id> | --all) [--dry-run]
                                Write i18n/<lang>.json into the mod folders.
 
@@ -58,7 +59,7 @@ Global options:
   --lang <code>   Target language (default: from the app settings).
 
 Output is JSON on stdout. Exit codes: 0 success, 1 failure, 2 invalid usage,
-3 saved, but some strings were rejected.
+3 some strings were rejected (the valid ones were saved).
 Close the app before running a command: both use the same data folder.";
 
 const VALUE_OPTIONS: &[&str] = &[
@@ -162,6 +163,7 @@ impl Args {
                         Some(value) => value,
                         None => iter
                             .next()
+                            .filter(|value| !value.starts_with("--"))
                             .ok_or_else(|| format!("{name} needs a value."))?,
                     };
                     if parsed.values.insert(name.to_string(), value).is_some() {
@@ -315,7 +317,7 @@ impl Context {
         let target_lang = args
             .value("--lang")
             .map(str::to_string)
-            .or(settings.target_lang)
+            .or_else(|| settings.target_lang.clone())
             .ok_or_else(|| {
                 "No target language is set. Choose one in the app, or pass --lang.".to_string()
             })?;
@@ -338,6 +340,24 @@ impl Context {
                 "The Mods folder {} is unavailable.",
                 mods_root.display()
             )));
+        }
+        // A pre-v1.1 profile's state belongs to the settings language, as in
+        // the app. Migrate it there first, since the scanner would otherwise
+        // move it into whichever language --lang names.
+        let settings_lang = settings
+            .target_lang
+            .as_deref()
+            .and_then(|lang| language::normalize_target_code(lang).ok());
+        match settings_lang {
+            Some(lang) => {
+                translations::language_root(&data_dir, &lang)?;
+            }
+            None if data_dir.join("translations").is_dir() => {
+                return Err(CliError::Failed(
+                    "This data folder has translations from an older app version. Open it in the app once and choose a target language first.".to_string(),
+                ));
+            }
+            None => {}
         }
         let state_root = translations::language_root(&data_dir, &target_lang)?;
         Ok(Context {
@@ -729,7 +749,7 @@ fn push(context: &Context, path: &Path, status: &str, dry_run: bool) -> CliResul
     let mut entries = Vec::new();
     let mut rejected = Vec::new();
     let mut warnings = Vec::new();
-    let (mut unchanged, mut empty) = (0usize, 0usize);
+    let (mut unchanged, mut empty, mut still_changed) = (0usize, 0usize, 0usize);
     for string in &file.strings {
         if !seen.insert((string.file.as_str(), string.key.as_str())) {
             return Err(CliError::Failed(format!(
@@ -755,15 +775,28 @@ fn push(context: &Context, path: &Path, status: &str, dry_run: bool) -> CliResul
             ));
             continue;
         }
-        if string.target.is_empty() {
+        // Whitespace reads back as untranslated; only a single space is the
+        // app's deliberate blank.
+        if string.target.trim().is_empty() && string.target != " " {
             empty += 1;
             continue;
         }
-        if let Some(rejection) =
-            token_rejection(&string.file, &string.key, &string.source, &string.target)
-        {
-            rejected.push(rejection);
+        let same_target = row.target == string.target;
+        // Sending a Changed string back unedited does not confirm it: the old
+        // text was written for the previous English source. `done` does that.
+        if same_target && row.status == "outdated" {
+            still_changed += 1;
             continue;
+        }
+        // Keep a token mismatch the translator accepted in the app.
+        let accepted_mismatch = same_target && row.token_mismatch_accepted;
+        if !accepted_mismatch {
+            if let Some(rejection) =
+                token_rejection(&string.file, &string.key, &string.source, &string.target)
+            {
+                rejected.push(rejection);
+                continue;
+            }
         }
         warnings.extend(string_warnings(
             &string.file,
@@ -772,15 +805,24 @@ fn push(context: &Context, path: &Path, status: &str, dry_run: bool) -> CliResul
             &string.target,
             glossary.as_ref(),
         ));
-        if row.target == string.target && row.status == status {
+        if same_target && row.status == status {
             unchanged += 1;
             continue;
         }
+        let stored_status = match (accepted_mismatch, status) {
+            (true, "review-needed") => translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS,
+            (true, _) => translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
+            (false, status) => status,
+        };
         entries.push((
             translations::entry_key(&string.file, &string.key),
             StoredString {
                 target: string.target.clone(),
-                status: translations::status_for_save(&string.source, &string.target, status),
+                status: translations::status_for_save(
+                    &string.source,
+                    &string.target,
+                    stored_status,
+                ),
                 source_hash: translations::source_hash(&string.source),
             },
         ));
@@ -795,6 +837,7 @@ fn push(context: &Context, path: &Path, status: &str, dry_run: bool) -> CliResul
         "wouldSave": entries.len(),
         "unchanged": unchanged,
         "skippedEmpty": empty,
+        "skippedStillChanged": still_changed,
         "rejected": rejected,
         "warnings": warnings,
     });
@@ -817,7 +860,13 @@ fn done(context: &Context, args: &Args) -> CliResult<Outcome> {
     let selected: Vec<&(String, StringRow)> = match args.value("--keys") {
         Some(keys) => {
             let mut selected = Vec::new();
+            let mut seen = HashSet::new();
             for key in keys.split(',').map(str::trim).filter(|key| !key.is_empty()) {
+                if !seen.insert(key) {
+                    return Err(CliError::Usage(format!(
+                        "--keys lists {key} more than once."
+                    )));
+                }
                 let found = rows
                     .iter()
                     .filter(|(_, row)| row.key == key)
@@ -1021,21 +1070,33 @@ fn read_record(path: &Path) -> CliResult<HistoryRecord> {
     })
 }
 
+/// `<epoch ms>-<sequence>-<push|done>`, as `record_change` names records.
+fn is_operation_id(id: &str) -> bool {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    let mut parts = id.splitn(3, '-');
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(millis), Some(sequence), Some("push" | "done")) if digits(millis) && digits(sequence)
+    )
+}
+
 fn list_history(context: &Context) -> CliResult<Value> {
     let operations = history_files(&context.history_dir())
         .iter()
-        .map(|path| {
-            read_record(path).map(|record| {
-                json!({
-                    "id": record.id,
-                    "command": record.command,
-                    "modUniqueId": record.mod_unique_id,
-                    "strings": record.changes.len(),
-                    "completedAtEpochMs": record.completed_at_epoch_ms,
-                })
-            })
+        .map(|path| match read_record(path) {
+            Ok(record) => json!({
+                "id": record.id,
+                "command": record.command,
+                "modUniqueId": record.mod_unique_id,
+                "strings": record.changes.len(),
+                "completedAtEpochMs": record.completed_at_epoch_ms,
+            }),
+            Err(CliError::Usage(error) | CliError::Failed(error)) => json!({
+                "id": path.file_stem().map(|stem| stem.to_string_lossy()),
+                "damaged": error,
+            }),
         })
-        .collect::<CliResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     Ok(json!({ "ok": true, "operations": operations }))
 }
 
@@ -1043,7 +1104,7 @@ fn undo(context: &Context, id: Option<&str>) -> CliResult<Outcome> {
     let directory = context.history_dir();
     let path = match id {
         Some(id) => {
-            if id.contains(['/', '\\']) || id.contains("..") {
+            if !is_operation_id(id) {
                 return Err(CliError::Usage(format!("{id} is not an operation id.")));
             }
             let path = directory.join(format!("{id}.json"));
@@ -1070,12 +1131,15 @@ fn undo(context: &Context, id: Option<&str>) -> CliResult<Outcome> {
             .map(|change| (change.key, change.applied, change.previous))
             .collect(),
     )?;
-    std::fs::remove_file(&path).map_err(|error| {
-        format!(
+    // The state is already restored; a record left behind only lists strings
+    // as changed since if undone again.
+    let warnings = match std::fs::remove_file(&path) {
+        Ok(()) => Vec::new(),
+        Err(error) => vec![format!(
             "Could not remove the undo record {}: {error}",
             path.display()
-        )
-    })?;
+        )],
+    };
     let kept = changed_since
         .iter()
         .map(|key| {
@@ -1090,6 +1154,7 @@ fn undo(context: &Context, id: Option<&str>) -> CliResult<Outcome> {
             "modUniqueId": record.mod_unique_id,
             "restored": total - kept.len(),
             "keptChangedSince": kept,
+            "warnings": warnings,
         }),
         rejected: false,
     })
@@ -1392,6 +1457,109 @@ mod tests {
         let file = fixture.translated_file(&[("farewell", "Tschüss.")]);
         let error = fixture.fail(&["push", &file.display().to_string(), "--lang", "fr"]);
         assert!(error.contains("--lang de"), "{error}");
+    }
+
+    #[test]
+    fn whitespace_targets_are_skipped_but_a_single_space_is_a_deliberate_blank() {
+        let fixture = Fixture::new("cli-blank");
+        let file = fixture.translated_file(&[("farewell", "\t "), ("other", " ")]);
+        let push = fixture.run(&["push", &file.display().to_string()]);
+        assert_eq!(push.body["skippedEmpty"], 2, "greeting and farewell");
+        assert_eq!(push.body["saved"], 1);
+        assert_eq!(fixture.statuses()["translated"], 1);
+        assert_eq!(fixture.statuses()["untranslated"], 2);
+    }
+
+    #[test]
+    fn an_unedited_changed_string_stays_changed_until_done() {
+        let fixture = Fixture::new("cli-outdated");
+        let file = fixture.translated_file(&[("farewell", "Tschüss.")]);
+        fixture.run(&["push", &file.display().to_string()]);
+        std::fs::write(
+            fixture.root.join("Mods/Example/i18n/default.json"),
+            r#"{ "greeting": "Hello, {{name}}!", "farewell": "Bye now.", "other": "Later." }"#,
+        )
+        .unwrap();
+        let file = fixture.translated_file(&[]);
+        let push = fixture.run(&["push", &file.display().to_string()]);
+        assert_eq!(push.body["skippedStillChanged"], 1);
+        assert_eq!(fixture.statuses()["outdated"], 1);
+        fixture.run(&["done", "--mod", "Fixture.Example", "--keys", "farewell"]);
+        assert_eq!(fixture.statuses()["outdated"], 0);
+        assert_eq!(fixture.statuses()["translated"], 1);
+    }
+
+    #[test]
+    fn push_keeps_a_token_mismatch_accepted_in_the_app() {
+        let fixture = Fixture::new("cli-accepted");
+        let state_root = translations::language_root(&fixture.root.join("data"), "de").unwrap();
+        translations::save_one(
+            &state_root,
+            "Fixture.Example",
+            translations::entry_key("i18n", "greeting"),
+            StoredString {
+                target: "Hallo!".into(),
+                status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello, {{name}}!"),
+            },
+        )
+        .unwrap();
+        let mut document = fixture
+            .run(&["pull", "--mod", "Fixture.Example", "--status", "all"])
+            .body["document"]
+            .clone();
+        document["strings"] = json!([document["strings"][0].clone()]);
+        let path = fixture.root.join("accepted.json");
+        std::fs::write(&path, document.to_string()).unwrap();
+
+        let push = fixture.run(&[
+            "push",
+            &path.display().to_string(),
+            "--status",
+            "review-needed",
+        ]);
+        assert!(!push.rejected, "{}", push.body);
+        let state = translations::load(&state_root, "Fixture.Example").unwrap();
+        assert_eq!(
+            state[&translations::entry_key("i18n", "greeting")].status,
+            translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS
+        );
+    }
+
+    #[test]
+    fn another_language_never_claims_legacy_state() {
+        let fixture = Fixture::new("cli-legacy");
+        let legacy = fixture.root.join("data/translations");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("Fixture.Example.json"), "{}").unwrap();
+        fixture.run(&["list", "--lang", "fr"]);
+        assert!(!legacy.exists());
+        let state = fixture.root.join("data/language-state");
+        assert!(
+            state.join("de/translations/Fixture.Example.json").is_file(),
+            "the legacy state belongs to the settings language"
+        );
+        assert!(!state.join("fr/translations/Fixture.Example.json").exists());
+    }
+
+    #[test]
+    fn rejects_repeated_keys_and_foreign_operation_ids() {
+        let fixture = Fixture::new("cli-ids");
+        assert!(fixture
+            .fail(&[
+                "done",
+                "--mod",
+                "Fixture.Example",
+                "--keys",
+                "farewell,farewell"
+            ])
+            .contains("more than once"));
+        assert!(fixture
+            .fail(&["undo", "C:foo"])
+            .contains("not an operation id"));
+        assert!(is_operation_id("1792599193737-0-push"));
+        assert!(!is_operation_id("1-0-push:stream"));
+        assert!(Args::parse(args(&["pull", "--mod", "--all"])).is_err());
     }
 
     #[test]

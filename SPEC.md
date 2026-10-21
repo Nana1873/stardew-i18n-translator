@@ -313,20 +313,26 @@ program), Mods folder, and target language as the app, overridable with
 `--mods` and `--lang`. It owns the portable data folder like the app does, so
 it refuses to run while the app or another command uses that folder. Every
 command prints one JSON document; exit code 0 is success, 1 failure, 2 invalid
-usage, and 3 a completed write in which some strings were rejected.
+usage, and 3 a completed command that rejected some strings (the valid ones
+were saved). A pre-v1.1 profile's state still migrates into the settings
+language, whatever `--lang` names.
 
 `pull` writes a strings file (`stardew-translator-strings`, version 1) for one
 mod with each string's file, key, English source, current target, status,
 section, protected tokens, and matching glossary terms. It selects Open and
-Changed strings by default. It writes nothing to the data or Mods folder.
+Changed strings by default. It changes no translation state and writes nothing
+to the Mods folder.
 
 `push` reads that file and saves non-empty targets as Done (`translated`) or,
-with `--status review-needed`, as Review. Per string, it rejects an unknown
-key, a source that changed since the pull, and a game-breaking token error;
-every other string is saved. Token warnings and glossary terms missing from
-the target are reported but never block. `check` runs the same validation
-without saving. `done` marks Review or Changed strings with a translation as
-Done, by key or all Review strings, with the same token rule.
+with `--status review-needed`, as Review. Empty and whitespace-only targets
+are skipped; a single space is the deliberate blank, as in the app. A Changed
+string sent back with its old text stays Changed. Per string, it rejects an
+unknown key, a source that changed since the pull, and a game-breaking token
+error, unless that exact mismatch was accepted in the app; every other string
+is saved. Token warnings and glossary terms missing from the target are
+reported but never block. `check` runs the same validation without saving.
+`done` marks Review or Changed strings with a translation as Done, by key or
+all Review strings, with the same token rule.
 
 Each `push` and `done` keeps an undo record in
 `language-state/<lang>/cli-history/` (the 20 latest). `undo` restores the

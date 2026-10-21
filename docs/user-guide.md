@@ -292,8 +292,10 @@ stardew-i18n-cli export --mod Some.Mod
 
 `push` saves finished translations as Done; add `--status review-needed` to
 review them in the app first. It rejects only strings that would break the
-game or whose English text changed since the pull, and saves the rest. `done
---mod Some.Mod --all` confirms every Review string. `undo` reverts the latest
+game or whose English text changed since the pull, and saves the rest. A
+Changed string sent back with its old text stays Changed: confirm it with
+`done --mod Some.Mod --keys <key>` after checking it. `done --mod Some.Mod
+--all` confirms every Review string. `undo` reverts the latest
 `push` or `done`, but keeps strings edited since. Run
 `stardew-i18n-cli --help` for every option. The
 [product contract](../SPEC.md#command-line-tool) describes the exact rules.
