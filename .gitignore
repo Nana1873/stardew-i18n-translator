@@ -38,6 +38,8 @@ dist/
 build/
 out/
 bin/
+# Cargo binary sources, not build output.
+!/src-tauri/src/bin/
 obj/
 target/
 .gradle/

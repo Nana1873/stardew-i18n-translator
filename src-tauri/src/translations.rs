@@ -513,6 +513,43 @@ pub fn save_many(
     )
 }
 
+/// Replace (or remove, for `None`) each entry whose stored value still equals
+/// `expected`, in one load-modify-write cycle. Returns the keys left alone
+/// because they changed since. The command-line undo uses this so it never
+/// overwrites a later edit.
+pub(crate) fn replace_if_unchanged(
+    config_dir: &Path,
+    unique_id: &str,
+    changes: Vec<(String, StoredString, Option<StoredString>)>,
+) -> Result<Vec<String>, String> {
+    let mut session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = load(config_dir, unique_id)?;
+    let mut touched_keys = Vec::new();
+    let mut changed_since = Vec::new();
+    for (key, expected, replacement) in changes {
+        if state.get(&key) != Some(&expected) {
+            changed_since.push(key);
+            continue;
+        }
+        match replacement {
+            Some(entry) => state.insert(key.clone(), entry),
+            None => state.remove(&key),
+        };
+        touched_keys.push(key);
+    }
+    if !touched_keys.is_empty() {
+        write_state(
+            &state_path(config_dir, unique_id),
+            &state,
+            &mut session,
+            &touched_keys,
+        )?;
+    }
+    Ok(changed_since)
+}
+
 /// Adopt disk translations only while their entries remain untracked. A loader
 /// may have read its candidates before another command saved a manual edit.
 pub(crate) fn adopt_imported_baselines(

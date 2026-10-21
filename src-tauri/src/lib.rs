@@ -9,6 +9,7 @@ mod batch;
 mod chatgpt;
 mod chatgpt_auth;
 mod chatgpt_response;
+pub mod cli;
 mod detection;
 mod export;
 mod glossary;

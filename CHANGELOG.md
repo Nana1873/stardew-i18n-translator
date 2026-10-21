@@ -8,6 +8,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Added
+
+- A command-line tool, `stardew-i18n-cli`, for scripts and other tools: list
+  mods, pull open strings with their tokens and glossary terms, check and push
+  finished translations, mark Review strings as Done, undo the latest change,
+  and export. It uses the app's data folder and the same token checks; only
+  game-breaking strings are rejected. Build it from source for now.
+
 ## [2.5.1] - 2026-10-14
 
 ### Changed

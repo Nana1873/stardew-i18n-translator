@@ -6,6 +6,8 @@ authors = ["Nana"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Nana1873/stardew-i18n-translator"
 edition = "2021"
+# The app is the default binary; `stardew-i18n-cli` is the command-line tool.
+default-run = "stardew-i18n-translator"
 
 [lib]
 name = "stardew_i18n_translator_lib"
