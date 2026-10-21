@@ -304,6 +304,37 @@ import: the preflight lists each affected string with plain-language errors and
 warnings and the imported text, and export leaves out strings with errors until
 they are fixed or accepted.
 
+## Command-Line Tool
+
+`stardew-i18n-cli` exposes the same translation state to scripts and
+automation: `list`, `pull`, `check`, `push`, `done`, `undo`, and `export`. It
+uses the same portable data folder (`--data`, default `data/` beside the
+program), Mods folder, and target language as the app, overridable with
+`--mods` and `--lang`. It owns the portable data folder like the app does, so
+it refuses to run while the app or another command uses that folder. Every
+command prints one JSON document; exit code 0 is success, 1 failure, 2 invalid
+usage, and 3 a completed write in which some strings were rejected.
+
+`pull` writes a strings file (`stardew-translator-strings`, version 1) for one
+mod with each string's file, key, English source, current target, status,
+section, protected tokens, and matching glossary terms. It selects Open and
+Changed strings by default. It writes nothing to the data or Mods folder.
+
+`push` reads that file and saves non-empty targets as Done (`translated`) or,
+with `--status review-needed`, as Review. Per string, it rejects an unknown
+key, a source that changed since the pull, and a game-breaking token error;
+every other string is saved. Token warnings and glossary terms missing from
+the target are reported but never block. `check` runs the same validation
+without saving. `done` marks Review or Changed strings with a translation as
+Done, by key or all Review strings, with the same token rule.
+
+Each `push` and `done` keeps an undo record in
+`language-state/<lang>/cli-history/` (the 20 latest). `undo` restores the
+previous values of strings that are still exactly as that operation left them
+and keeps later edits. `export` writes `i18n/<lang>.json` for one mod or all
+mods through the app's export, with `--dry-run` for its preview. No other
+command writes to the Mods folder.
+
 ## Optional Glossary and AI
 
 The glossary supplies high-confidence names for items, tools, weapons, clothing,
@@ -344,7 +375,8 @@ All persistent application state lives in `data/` beside the executable:
   timestamps, and Workspace view settings;
 - `scan-source-snapshot.json`: source-change baseline;
 - `glossary/glossary-<lang>.json`: optional glossary cache;
-- `language-state/<lang>/`: translation progress;
+- `language-state/<lang>/`: translation progress, and command-line undo
+  records in `cli-history/`;
 - `logs/`: optional rotating local logs.
 
 One running process owns a portable data folder. A second instance using that

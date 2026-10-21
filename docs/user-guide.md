@@ -271,6 +271,33 @@ again. A stale package selection is rejected before writing a ZIP.
 Check coverage, Review, and Changed in the app and the ZIP preview before
 sharing the archive. Uploading and publication happen outside the desktop app.
 
+## Use the command-line tool
+
+`stardew-i18n-cli` lets scripts and other tools work on the same translations
+as the app. It is not part of the release ZIP yet; build it from source with
+`cargo build --release --bin stardew-i18n-cli` in `src-tauri`. Close the app
+first: both use the same data folder. Pass that folder with `--data` unless the
+program sits next to the app.
+
+A typical round:
+
+```text
+stardew-i18n-cli list
+stardew-i18n-cli pull --mod Some.Mod --out strings.json
+# fill in the "target" values in strings.json
+stardew-i18n-cli check strings.json
+stardew-i18n-cli push strings.json
+stardew-i18n-cli export --mod Some.Mod
+```
+
+`push` saves finished translations as Done; add `--status review-needed` to
+review them in the app first. It rejects only strings that would break the
+game or whose English text changed since the pull, and saves the rest. `done
+--mod Some.Mod --all` confirms every Review string. `undo` reverts the latest
+`push` or `done`, but keeps strings edited since. Run
+`stardew-i18n-cli --help` for every option. The
+[product contract](../SPEC.md#command-line-tool) describes the exact rules.
+
 ## Find operation results
 
 The result tray shows output paths, file names, summaries, and warnings.
