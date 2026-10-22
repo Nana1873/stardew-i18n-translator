@@ -298,7 +298,8 @@ Changed string sent back with its old text stays Changed: confirm it with
 `done --mod Some.Mod --keys <key>` after checking it. `done --mod Some.Mod
 --all` confirms every Review string. `undo` reverts the latest
 `push` or `done`, but keeps strings edited since. Run
-`stardew-i18n-cli --help` for every option. The
+`stardew-i18n-cli --help` for every option. If `pull` or `check` reports
+`glossaryOutdated`, rebuild the glossary in the app's Settings; the tool cannot. The
 [product contract](../SPEC.md#command-line-tool) describes the exact rules.
 
 ## Find operation results

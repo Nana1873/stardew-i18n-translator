@@ -23,6 +23,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - The German glossary now also has a few names that only appear in dialogue,
   such as Stardew Valley (Sternentautal) and JojaMart (Joja-Markt). Rebuild the
   glossary in Settings to add them.
+- `stardew-i18n-cli pull` and `check` now report `glossaryOutdated` when the
+  glossary was built by an older app version, so it can be rebuilt in the app.
 
 ### Fixed
 

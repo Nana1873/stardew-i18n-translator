@@ -321,7 +321,10 @@ language, whatever `--lang` names.
 mod with each string's file, key, English source, current target, status,
 section, protected tokens, and matching glossary terms. It selects Open and
 Changed strings by default. It changes no translation state and writes nothing
-to the Mods folder.
+to the Mods folder. When the cached glossary comes from an older app version,
+`pull` and `check` add `"glossaryOutdated": true` and a one-line
+`glossaryNotice` to their output; the CLI cannot rebuild it, so rebuild it in
+the app. Nothing is added for a current or missing glossary.
 
 `push` reads that file and saves non-empty targets as Done (`translated`) or,
 with `--status review-needed`, as Review. Empty and whitespace-only targets
