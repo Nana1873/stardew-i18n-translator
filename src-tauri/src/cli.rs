@@ -551,6 +551,7 @@ fn pull(context: &Context, args: &Args) -> CliResult<Value> {
             "returned": selected.len(),
             "remaining": matching.len() - selected.len(),
         });
+        note_outdated_glossary(&mut body, glossary.as_ref());
         if let Some(document) = document {
             body["document"] = document;
         }
@@ -566,6 +567,16 @@ fn pull(context: &Context, args: &Args) -> CliResult<Value> {
             Ok(body)
         }
         None => Ok(summary(Some(document))),
+    }
+}
+
+fn note_outdated_glossary(body: &mut Value, glossary: Option<&glossary::Glossary>) {
+    if glossary.is_some_and(|glossary| glossary.format < glossary::GLOSSARY_FORMAT) {
+        body["glossaryOutdated"] = Value::Bool(true);
+        body["glossaryNotice"] = Value::String(
+            "The glossary was built by an older app version. Rebuild it in the app's Settings."
+                .into(),
+        );
     }
 }
 
@@ -841,6 +852,7 @@ fn push(context: &Context, path: &Path, status: &str, dry_run: bool) -> CliResul
         "rejected": rejected,
         "warnings": warnings,
     });
+    note_outdated_glossary(&mut body, glossary.as_ref());
     if !dry_run && !entries.is_empty() {
         let id = record_change(context, "push", &scanned.unique_id, entries)?;
         body["operationId"] = Value::String(id);
@@ -1333,6 +1345,41 @@ mod tests {
         assert_eq!(strings[0]["key"], "greeting");
         assert_eq!(strings[0]["tokens"], json!(["{{name}}"]));
         assert_eq!(body["document"]["format"], STRINGS_FORMAT);
+    }
+
+    fn save_glossary(fixture: &Fixture, format: u32) {
+        let glossary = glossary::Glossary {
+            format,
+            target_lang: "de".into(),
+            ..Default::default()
+        };
+        glossary::save(&fixture.root.join("data"), &glossary).unwrap();
+    }
+
+    #[test]
+    fn pull_check_and_push_report_an_outdated_glossary_only_when_it_is_outdated() {
+        let fixture = Fixture::new("cli-glossary-outdated");
+        let none = fixture.run(&["pull", "--mod", "Fixture.Example"]).body;
+        assert!(none.get("glossaryOutdated").is_none());
+
+        save_glossary(&fixture, glossary::GLOSSARY_FORMAT);
+        let path = fixture.translated_file(&[("farewell", "Tschüss.")]);
+        let path = path.to_str().unwrap();
+        let pulled = fixture.run(&["pull", "--mod", "Fixture.Example"]).body;
+        let checked = fixture.run(&["check", path]).body;
+        for body in [&pulled, &checked] {
+            assert!(body.get("glossaryOutdated").is_none());
+            assert!(body.get("glossaryNotice").is_none());
+        }
+
+        save_glossary(&fixture, 2);
+        let pulled = fixture.run(&["pull", "--mod", "Fixture.Example"]).body;
+        let checked = fixture.run(&["check", path]).body;
+        let pushed = fixture.run(&["push", path]).body;
+        for body in [&pulled, &checked, &pushed] {
+            assert_eq!(body["glossaryOutdated"], true);
+            assert!(body["glossaryNotice"].as_str().unwrap().contains("Rebuild"));
+        }
     }
 
     #[test]

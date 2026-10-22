@@ -19,7 +19,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   the Stardrop Saloon, farm buildings, farm animals, boots, hats, monsters,
   movies, and movie snacks. Rebuild the glossary in Settings to add them; an
   older glossary keeps working until then. After going back to 2.5.1 or older,
-  rebuild a glossary built by this version.
+  rebuild a glossary built by this version. The German glossary also gains a
+  few names that only appear in dialogue: Skull Cavern (Schädelhöhle) and Gem
+  Sea (Edelsteinsee).
+- `stardew-i18n-cli pull`, `check` and `push` now report `glossaryOutdated` when the
+  glossary was built by an older app version, so it can be rebuilt in the app.
 
 ### Fixed
 

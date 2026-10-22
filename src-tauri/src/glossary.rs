@@ -133,6 +133,8 @@ enum KeyRule {
     Suffix(&'static str),
     /// Keys starting with the prefix, or exactly the one extra key.
     PrefixOrKey(&'static str, &'static str),
+    /// Only these exact keys (single names inside assets of UI text).
+    Keys(&'static [&'static str]),
 }
 
 /// One asset the glossary reads: which keys and which part of each value hold a
@@ -169,8 +171,7 @@ const NAME: AssetSpec = AssetSpec {
 
 /// Typed content assets, in priority order — when the same English name appears
 /// in several assets, the first one wins (item names beat stray collisions).
-/// Assets absent from the selected string source are simply skipped. The generic
-/// `1_6_Strings` asset stays excluded because it mixes UI and content terms.
+/// Assets absent from the selected string source are simply skipped.
 const TYPED_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Objects",
@@ -256,12 +257,27 @@ enum ValuePart {
 ///
 /// Only string dictionaries are read. `Data/Locations`, `Data/WorldMap` and
 /// `Data/PassiveFestivals` are typed objects that the narrow XNB reader does not
-/// decode; their display names point at `StringsFromCSFiles` (`MapPage.cs.*`)
-/// and `Strings/WorldMap`, which are read here instead.
+/// decode; their display names point at `StringsFromCSFiles` (`MapPage.cs.*`),
+/// `Strings/WorldMap`, `Strings/UI` and `Strings/1_6_Strings`, which are read
+/// here instead.
 const NAME_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Data/Festivals/FestivalDates",
         kind: TermKind::Festival,
+        ..NAME
+    },
+    // Passive festivals: the keys their `DisplayName` and calendar entries
+    // point at. Both assets are otherwise UI text and dialogue.
+    AssetSpec {
+        asset: "UI",
+        kind: TermKind::Festival,
+        rule: KeyRule::Keys(&["Billboard_NightMarket"]),
+        ..NAME
+    },
+    AssetSpec {
+        asset: "1_6_Strings",
+        kind: TermKind::Festival,
+        rule: KeyRule::Keys(&["DesertFestival", "TroutDerby", "SquidFest"]),
         ..NAME
     },
     AssetSpec {
@@ -325,6 +341,39 @@ const NAME_ASSETS: &[AssetSpec] = &[
         ..NAME
     },
 ];
+
+/// Provenance label (`asset`) of the hand-checked [`CURATED_DE`] entries.
+const CURATED_ASSET: &str = "curated";
+
+/// German names that appear only in dialogue and descriptions, so no name asset
+/// holds them. Hand-checked against the game's most common wording; applied to
+/// official German builds only, after every asset-derived entry. "Stardew
+/// Valley" is left out on purpose: mod text often means the game itself
+/// ("Stardew Valley Expanded"), where Sternentautal would be a false hint.
+const CURATED_DE: &[(&str, &str)] = &[
+    ("Skull Cavern", "Schädelhöhle"),
+    ("Gem Sea", "Edelsteinsee"),
+];
+
+/// Append the curated names for `target_lang`. An English term an asset already
+/// defines keeps its asset-derived entry. The quality gate is skipped: these
+/// are reviewed by hand.
+fn add_curated_entries(entries: &mut Vec<GlossaryEntry>, target_lang: &str) {
+    if target_lang != "de" {
+        return;
+    }
+    for (source, target) in CURATED_DE {
+        if !entries.iter().any(|entry| entry.source == *source) {
+            entries.push(GlossaryEntry {
+                source: (*source).to_string(),
+                target: (*target).to_string(),
+                kind: TermKind::Location,
+                asset: CURATED_ASSET.to_string(),
+                key: (*source).to_string(),
+            });
+        }
+    }
+}
 
 /// Official glossary entries whose `source` occurs as a whole word in `source`.
 /// **Case-sensitive** (named entities are capitalized, so a UI term like `Play`
@@ -613,7 +662,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
             .inspect_err(|error| note(asset, format!("{file}: {error}")))
             .ok()
     };
-    let entries = build_entries(
+    let mut entries = build_entries(
         &|asset| {
             let english = read(asset, format!("{asset}.xnb"));
             let target = format!("{asset}.{suffix}.xnb");
@@ -630,6 +679,9 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
         log::warn!(target: "app", "Game XNB skipped for the glossary: {problem}");
     }
     if !entries.is_empty() {
+        // Only on top of real asset names: curated terms alone never make a
+        // glossary out of unreadable game files.
+        add_curated_entries(&mut entries, target_lang);
         return Ok(Glossary {
             format: GLOSSARY_FORMAT,
             source_lang: "default".to_string(),
@@ -781,6 +833,7 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
         KeyRule::Prefixes(prefixes) => prefixes.iter().any(|prefix| key.starts_with(prefix)),
         KeyRule::Suffix(suffix) => key.ends_with(suffix),
         KeyRule::PrefixOrKey(prefix, exact) => key.starts_with(prefix) || key == exact,
+        KeyRule::Keys(keys) => keys.contains(&key),
     }
 }
 
@@ -1576,6 +1629,30 @@ mod tests {
                 ("JojaCola_Name", "Joja-Cola"),
             ],
         );
+        pair(
+            "Strings/UI",
+            &[
+                ("Billboard_NightMarket", "Night Market"),
+                ("Billboard_NothingPosted", "Nothing Posted"),
+            ],
+            &[
+                ("Billboard_NightMarket", "Nachtmarkt"),
+                ("Billboard_NothingPosted", "Nichts ausgehängt"),
+            ],
+        );
+        pair(
+            "Strings/1_6_Strings",
+            &[
+                ("TroutDerby", "Trout Derby"),
+                ("TroutDerby_NowOpen", "Trout Derby Now Open"),
+                ("SquidFestBooth_Intro", "Welcome to SquidFest"),
+            ],
+            &[
+                ("TroutDerby", "Forellenderby"),
+                ("TroutDerby_NowOpen", "Forellenderby eröffnet"),
+                ("SquidFestBooth_Intro", "Willkommen beim Tintenfischfest"),
+            ],
+        );
 
         let glossary = build_from_game(&root, "de").unwrap();
         let find = |source: &str| {
@@ -1630,6 +1707,11 @@ mod tests {
                 "Cotton Candy",
                 ("Zuckerwatte", TermKind::Item, "MovieConcessions"),
             ),
+            ("Night Market", ("Nachtmarkt", TermKind::Festival, "UI")),
+            (
+                "Trout Derby",
+                ("Forellenderby", TermKind::Festival, "1_6_Strings"),
+            ),
         ] {
             assert_eq!(find(source), Some(expected), "{source}");
         }
@@ -1640,6 +1722,9 @@ mod tests {
             "1 Willow Lane",
             "Void Egg",
             "A Brave Little Tale",
+            "Nothing Posted",
+            "Trout Derby Now Open",
+            "Welcome to SquidFest",
         ] {
             assert!(find(absent).is_none(), "{absent} must not be a term");
         }
@@ -1722,9 +1807,45 @@ mod tests {
         let glossary = build_from_game(&root, "de").unwrap();
 
         assert_eq!(glossary.source, GlossarySource::Official);
-        assert_eq!(glossary.term_count, 1);
+        assert_eq!(glossary.term_count, 1 + CURATED_DE.len());
         assert_eq!(glossary.entries[0].source, "Parsnip");
         assert_eq!(glossary.entries[0].target, "Pastinake");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn curated_german_names_are_added_last_to_german_builds_only() {
+        let root = crate::test_support::temp_dir("glossary-curated");
+        let strings = root.join("Content").join("Strings");
+        for (file, value) in [
+            ("Objects.xnb", "Parsnip"),
+            ("Objects.de-DE.xnb", "Pastinake"),
+            ("Objects.fr-FR.xnb", "Panais"),
+        ] {
+            write_bytes(&strings.join(file), &test_xnb_dictionary(&[("24", value)]));
+        }
+
+        let german = build_from_game(&root, "de").unwrap();
+        assert_eq!(german.entries[0].source, "Parsnip");
+        assert!(german.entries[1..].iter().all(|e| e.asset == CURATED_ASSET));
+        assert_eq!(german.entries.len(), 1 + CURATED_DE.len());
+        assert_eq!(german.term_count, german.entries.len());
+
+        let french = build_from_game(&root, "fr").unwrap();
+        assert!(french.entries.iter().all(|e| e.asset != CURATED_ASSET));
+
+        let mut entries = vec![GlossaryEntry {
+            source: "Gem Sea".to_string(),
+            target: "Juwelenmeer".to_string(),
+            kind: TermKind::Location,
+            asset: "WorldMap".to_string(),
+            key: "GemSea".to_string(),
+        }];
+        add_curated_entries(&mut entries, "de");
+        assert_eq!(entries.len(), CURATED_DE.len());
+        assert_eq!(entries[0].target, "Juwelenmeer");
+        assert_eq!(entries.iter().filter(|e| e.source == "Gem Sea").count(), 1);
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1940,8 +2061,22 @@ mod tests {
         );
         let built =
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
-        assert_eq!(built.term_count, direct.len());
         eprintln!("glossary: direct XNB terms {}", direct.len());
+        // Require each curated name, curated or asset-derived, so a future
+        // game update that adds one as an asset does not fail the test.
+        for (source, target) in CURATED_DE {
+            assert!(
+                built
+                    .entries
+                    .iter()
+                    .any(|entry| entry.source == *source && entry.target == *target),
+                "{source}"
+            );
+        }
+        assert!(!built
+            .entries
+            .iter()
+            .any(|entry| entry.source == "Stardew Valley"));
 
         // Spot checks for the Strings and Data name groups (German 1.6).
         let find = |source: &str| {
@@ -1962,6 +2097,10 @@ mod tests {
                 "Sternentautaler Volksfest",
                 TermKind::Festival,
             ),
+            ("Night Market", "Nachtmarkt", TermKind::Festival),
+            ("Desert Festival", "Wüstenfestival", TermKind::Festival),
+            ("Trout Derby", "Forellenderby", TermKind::Festival),
+            ("SquidFest", "Tintenfischfest", TermKind::Festival),
             ("Pelican Town", "Pelikan", TermKind::Location),
             (
                 "Stardrop Saloon",
