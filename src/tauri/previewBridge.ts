@@ -936,7 +936,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     }
     case "load_glossary": {
       const glossary: Glossary = {
-        format: 2,
+        format: 3,
         sourceLang: "default",
         targetLang: targetLang(),
         termCount: FIXTURE_GLOSSARY.length,

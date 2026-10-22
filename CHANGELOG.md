@@ -15,6 +15,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   finished translations, mark Review strings as Done, undo the latest change,
   and export. It uses the app's data folder and the same token checks; only
   game-breaking strings are rejected. Build it from source for now.
+- The glossary now also knows festival names, places such as Pelican Town and
+  the Stardrop Saloon, farm buildings, farm animals, boots, hats, monsters,
+  movies, and movie snacks. Rebuild the glossary in Settings to add them; an
+  older glossary keeps working until then.
 
 ## [2.5.1] - 2026-10-14
 

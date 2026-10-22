@@ -773,21 +773,29 @@ export type TermKind =
   | "clothing"
   | "npc"
   | "location"
-  | "season";
+  | "season"
+  | "festival"
+  | "building"
+  | "animal"
+  | "monster"
+  | "movie"
+  /** A kind written by a newer app version (the term still applies). */
+  | "unknown";
 
 /** One typed official term (mirrors Rust `GlossaryEntry`). */
 export interface GlossaryEntry {
   source: string;
   target: string;
   kind: TermKind;
-  /** Source `Strings/*` asset (provenance). */
+  /** Source asset, such as `Objects` or `Data/Boots` (provenance). */
   asset: string;
   /** Source key within the asset (provenance). */
   key: string;
 }
 
 export interface Glossary {
-  /** Cache schema version (2 = typed entries). */
+  /** Cache schema version (2 = typed entries, 3 = with the festival, place,
+   * building, animal, boots, hat, monster and movie groups). */
   format: number;
   sourceLang: string;
   targetLang: string;
