@@ -292,7 +292,8 @@ const NAME_ASSETS: &[Extraction] = &[
     Extraction {
         asset: "StringsFromCSFiles",
         kind: TermKind::Location,
-        rule: KeyRule::Prefixes(&["MapPage.cs."]),
+        // `IslandName` is the only plain `Ginger Island` string in the game.
+        rule: KeyRule::Prefixes(&["MapPage.cs.", "IslandName"]),
         value: ValuePart::FirstLine,
         ..NAME_ASSET
     },
@@ -875,9 +876,10 @@ fn glossary_term(english: &str, target: &str, target_lang: &str) -> Option<(Stri
     }
     // Function words inside a name do not count, so `Feast of the Winter Star`
     // stays a name while longer descriptions / dialogue prose are excluded.
+    // Titles capitalize them (`It Howls In The Rain`), so case is ignored here.
     let content_words = en
         .split_whitespace()
-        .filter(|word| !is_name_function_word(word))
+        .filter(|word| !is_name_function_word(&word.to_lowercase()))
         .count();
     if en.chars().count() > 30 || content_words > 4 {
         return None;
@@ -1359,6 +1361,8 @@ mod tests {
         assert!(glossary_term("Message in a Bottle", "Flaschenpost", "de").is_some());
         // Function words do not count toward the word limit.
         assert!(glossary_term("Feast of the Winter Star", "Fest des Wintersterns", "de").is_some());
+        // Title Case capitalizes them, which does not make them count.
+        assert!(glossary_term("It Howls In The Rain", "Das Geheul im Regen", "de").is_some());
         assert_eq!(
             glossary_term("Big Red Shiny Lucky Hat", "Großer roter Hut", "de"),
             None
@@ -2065,6 +2069,54 @@ mod tests {
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
         assert_eq!(built.term_count, direct.len());
         eprintln!("glossary: direct XNB terms {}", direct.len());
+
+        // Spot checks for the Strings and Data name groups (German 1.6).
+        let find = |source: &str| {
+            built
+                .entries
+                .iter()
+                .find(|entry| entry.source == source)
+                .map(|entry| (entry.target.as_str(), entry.kind))
+        };
+        for (source, target, kind) in [
+            (
+                "Feast of the Winter Star",
+                "Fest des Wintersterns",
+                TermKind::Festival,
+            ),
+            (
+                "Stardew Valley Fair",
+                "Sternentautaler Volksfest",
+                TermKind::Festival,
+            ),
+            ("Pelican Town", "Pelikan", TermKind::Location),
+            (
+                "Stardrop Saloon",
+                "Kneipe zum Sternenfall",
+                TermKind::Location,
+            ),
+            ("Ginger Island", "Ingwerinsel", TermKind::Location),
+            ("Pantry", "Speisekammer", TermKind::Location),
+            ("Barn", "Stall", TermKind::Building),
+            ("Slime Hutch", "Schleim-Stall", TermKind::Building),
+            ("Void Chicken", "Schattenhuhn", TermKind::Animal),
+            ("Rubber Boots", "Regenstiefel", TermKind::Clothing),
+            ("Top Hat", "Zylinder", TermKind::Clothing),
+            ("Shadow Brute", "Schattenbestie", TermKind::Monster),
+            (
+                "It Howls In The Rain",
+                "Das Geheul im Regen",
+                TermKind::Movie,
+            ),
+        ] {
+            assert_eq!(find(source), Some((target, kind)), "{source}");
+        }
+        for target in ["Verlassen", "Laden", "Regeln", "Tipp", "Tiere kaufen"] {
+            assert!(
+                !built.entries.iter().any(|entry| entry.target == target),
+                "{target}"
+            );
+        }
     }
 
     #[test]
