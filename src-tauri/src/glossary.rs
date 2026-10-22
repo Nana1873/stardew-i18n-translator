@@ -108,6 +108,9 @@ enum KeyRule {
     NameOnly,
     /// Only the four season keys in `StringsFromCSFiles`.
     Seasons,
+    /// Only keys starting with one of these prefixes (assets that mix names
+    /// with menu choices and dialogue under other keys).
+    Prefixes(&'static [&'static str]),
 }
 
 struct AssetSpec {
@@ -159,7 +162,14 @@ const TYPED_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Locations",
         kind: TermKind::Location,
-        rule: KeyRule::Bare,
+        // The asset also holds menu choices (`AnimalShop_Marnie_Leave`) and
+        // dialogue, so only key groups that are real names are read.
+        rule: KeyRule::Prefixes(&[
+            "AdventureGuild_KillList_",
+            "AdventureGuild_ItemRecovery",
+            "CommunityCenter_AreaName_",
+            "MineCart_Destination_",
+        ]),
     },
     AssetSpec {
         asset: "StringsFromCSFiles",
@@ -592,6 +602,7 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
             key.to_ascii_lowercase().as_str(),
             "spring" | "summer" | "fall" | "winter"
         ),
+        KeyRule::Prefixes(prefixes) => prefixes.iter().any(|prefix| key.starts_with(prefix)),
     }
 }
 
@@ -658,6 +669,7 @@ fn is_common_ui_word(term: &str) -> bool {
         "exit", "menu", "options", "settings", "save", "load", "continue", "help", "done", "close",
         "open", "skip", "start", "stop", "new", "delete", "remove", "add", "edit", "on", "off",
         "book", "right", "left", "up", "down", "and", "or", "with", "good", "bad", "ran", "run",
+        "leave", "shop", "rules", "hint",
     ];
     STOPWORDS.iter().any(|word| term.eq_ignore_ascii_case(word))
 }
@@ -1154,18 +1166,27 @@ mod tests {
         // NPCNames: clean single-word names.
         xnb("NPCNames.xnb", &[("Abigail", "Abigail")]);
         xnb("NPCNames.de-DE.xnb", &[("Abigail", "Abby")]);
-        // Locations: a real place name (kept) + a prose/format value (rejected).
+        // Locations: only name key groups are kept (room, kill-list monster);
+        // menu choices and prose/format values are rejected.
         xnb(
             "Locations.xnb",
             &[
-                ("Town", "Pelican Town"),
+                ("CommunityCenter_AreaName_Pantry", "Pantry"),
+                ("AdventureGuild_KillList_Bats", "Bats"),
+                ("AnimalShop_Marnie_Animals", "Purchase Animals"),
+                ("AnimalShop_Marnie_Leave", "Leave"),
+                ("Blacksmith_Clint_Shop", "Shop"),
                 ("Beach_Sign", "Welcome to the beach! Watch for {0}."),
             ],
         );
         xnb(
             "Locations.de-DE.xnb",
             &[
-                ("Town", "Pelikanstadt"),
+                ("CommunityCenter_AreaName_Pantry", "Speisekammer"),
+                ("AdventureGuild_KillList_Bats", "Fledermäuse"),
+                ("AnimalShop_Marnie_Animals", "Tiere kaufen"),
+                ("AnimalShop_Marnie_Leave", "Verlassen"),
+                ("Blacksmith_Clint_Shop", "Laden"),
                 ("Beach_Sign", "Willkommen am Strand! Achte auf {0}."),
             ],
         );
@@ -1191,10 +1212,12 @@ mod tests {
         assert_eq!(find("Parsnip").map(|e| e.kind), Some(TermKind::Item));
         assert_eq!(find("Galaxy Sword").map(|e| e.kind), Some(TermKind::Weapon));
         assert_eq!(find("Abigail").map(|e| e.kind), Some(TermKind::Npc));
-        assert_eq!(
-            find("Pelican Town").map(|e| e.kind),
-            Some(TermKind::Location)
-        );
+        assert_eq!(find("Pantry").map(|e| e.kind), Some(TermKind::Location));
+        assert_eq!(find("Bats").map(|e| e.kind), Some(TermKind::Location));
+        // Menu choices from Strings/Locations are not names.
+        for menu in ["Leave", "Shop", "Purchase Animals"] {
+            assert!(find(menu).is_none(), "{menu}");
+        }
         assert_eq!(find("Spring").map(|e| e.kind), Some(TermKind::Season));
 
         // Excluded: descriptions, format strings, greeting prose.
