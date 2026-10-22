@@ -570,8 +570,6 @@ fn pull(context: &Context, args: &Args) -> CliResult<Value> {
     }
 }
 
-/// Add a non-blocking note when the loaded glossary comes from an older app
-/// version. The CLI cannot rebuild it; current and missing glossaries add nothing.
 fn note_outdated_glossary(body: &mut Value, glossary: Option<&glossary::Glossary>) {
     if glossary.is_some_and(|glossary| glossary.format < glossary::GLOSSARY_FORMAT) {
         body["glossaryOutdated"] = Value::Bool(true);
@@ -1359,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn pull_and_check_report_an_outdated_glossary_only_when_it_is_outdated() {
+    fn pull_check_and_push_report_an_outdated_glossary_only_when_it_is_outdated() {
         let fixture = Fixture::new("cli-glossary-outdated");
         let none = fixture.run(&["pull", "--mod", "Fixture.Example"]).body;
         assert!(none.get("glossaryOutdated").is_none());
@@ -1377,7 +1375,8 @@ mod tests {
         save_glossary(&fixture, 2);
         let pulled = fixture.run(&["pull", "--mod", "Fixture.Example"]).body;
         let checked = fixture.run(&["check", path]).body;
-        for body in [&pulled, &checked] {
+        let pushed = fixture.run(&["push", path]).body;
+        for body in [&pulled, &checked, &pushed] {
             assert_eq!(body["glossaryOutdated"], true);
             assert!(body["glossaryNotice"].as_str().unwrap().contains("Rebuild"));
         }

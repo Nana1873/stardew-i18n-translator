@@ -19,11 +19,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   the Stardrop Saloon, farm buildings, farm animals, boots, hats, monsters,
   movies, and movie snacks. Rebuild the glossary in Settings to add them; an
   older glossary keeps working until then. After going back to 2.5.1 or older,
-  rebuild a glossary built by this version.
-- The German glossary now also has a few names that only appear in dialogue,
-  such as Stardew Valley (Sternentautal) and JojaMart (Joja-Markt). Rebuild the
-  glossary in Settings to add them.
-- `stardew-i18n-cli pull` and `check` now report `glossaryOutdated` when the
+  rebuild a glossary built by this version. The German glossary also gains a
+  few names that only appear in dialogue, such as Stardew Valley
+  (Sternentautal) and JojaMart (Joja-Markt).
+- `stardew-i18n-cli pull`, `check` and `push` now report `glossaryOutdated` when the
   glossary was built by an older app version, so it can be rebuilt in the app.
 
 ### Fixed

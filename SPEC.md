@@ -322,7 +322,7 @@ mod with each string's file, key, English source, current target, status,
 section, protected tokens, and matching glossary terms. It selects Open and
 Changed strings by default. It changes no translation state and writes nothing
 to the Mods folder. When the cached glossary comes from an older app version,
-`pull` and `check` add `"glossaryOutdated": true` and a one-line
+`pull`, `check` and `push` add `"glossaryOutdated": true` and a one-line
 `glossaryNotice` to their output; the CLI cannot rebuild it, so rebuild it in
 the app. Nothing is added for a current or missing glossary.
 
@@ -353,10 +353,11 @@ game's `Content/Strings/*.xnb` dictionaries and the string dictionaries
 `Data/Boots`, `Data/hats`, `Data/Monsters`, and `Data/Festivals/FestivalDates`
 directly; no unpacking tool is needed. The official German glossary also holds
 a few hand-checked names that only appear in prose, such as Sternentautal for
-Stardew Valley; they never replace a name read from the game files. Custom-language packs may supply local
-`Strings` JSON or XNB files, paired with the English names from the same game
-files. A glossary built by an older app version keeps working and is marked for
-a rebuild when a rebuild is possible; a term category the app does not know does not disable the glossary.
+Stardew Valley; they never replace a name read from the game files.
+Custom-language packs may supply local `Strings` JSON or XNB files, paired with
+the English names from the same game files. A glossary built by an older app
+version keeps working and is marked for a rebuild when a rebuild is possible; a
+term category the app does not know does not disable the glossary.
 Pack inspection is read-only and limited to language registration and string
 assets. Missing glossary data never blocks the core workflow; glossaries are
 stored per language and never bundled with the app.
