@@ -2063,8 +2063,23 @@ mod tests {
         );
         let built =
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
-        assert_eq!(built.term_count, direct.len() + CURATED_DE.len());
         eprintln!("glossary: direct XNB terms {}", direct.len());
+        // German 1.6 already defines some curated terms (JojaMart, Cindersap
+        // Forest) in StringsFromCSFiles, so only require each curated name,
+        // curated or asset-derived.
+        for (source, target) in CURATED_DE {
+            assert!(
+                built
+                    .entries
+                    .iter()
+                    .any(|entry| entry.source == *source && entry.target == *target),
+                "{source}"
+            );
+        }
+        assert!(!built
+            .entries
+            .iter()
+            .any(|entry| entry.source == "Stardew Valley"));
 
         // Spot checks for the Strings and Data name groups (German 1.6).
         let find = |source: &str| {
