@@ -133,6 +133,8 @@ enum KeyRule {
     Suffix(&'static str),
     /// Keys starting with the prefix, or exactly the one extra key.
     PrefixOrKey(&'static str, &'static str),
+    /// Only these exact keys (single names inside assets of UI text).
+    Keys(&'static [&'static str]),
 }
 
 /// One asset the glossary reads: which keys and which part of each value hold a
@@ -170,7 +172,8 @@ const NAME: AssetSpec = AssetSpec {
 /// Typed content assets, in priority order — when the same English name appears
 /// in several assets, the first one wins (item names beat stray collisions).
 /// Assets absent from the selected string source are simply skipped. The generic
-/// `1_6_Strings` asset stays excluded because it mixes UI and content terms.
+/// `1_6_Strings` asset mixes UI and content terms, so [`NAME_ASSETS`] reads only
+/// a few exact keys from it.
 const TYPED_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Objects",
@@ -256,12 +259,27 @@ enum ValuePart {
 ///
 /// Only string dictionaries are read. `Data/Locations`, `Data/WorldMap` and
 /// `Data/PassiveFestivals` are typed objects that the narrow XNB reader does not
-/// decode; their display names point at `StringsFromCSFiles` (`MapPage.cs.*`)
-/// and `Strings/WorldMap`, which are read here instead.
+/// decode; their display names point at `StringsFromCSFiles` (`MapPage.cs.*`),
+/// `Strings/WorldMap`, `Strings/UI` and `Strings/1_6_Strings`, which are read
+/// here instead.
 const NAME_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Data/Festivals/FestivalDates",
         kind: TermKind::Festival,
+        ..NAME
+    },
+    // Passive festivals: the keys their `DisplayName` and calendar entries
+    // point at. Both assets are otherwise UI text and dialogue.
+    AssetSpec {
+        asset: "UI",
+        kind: TermKind::Festival,
+        rule: KeyRule::Keys(&["Billboard_NightMarket"]),
+        ..NAME
+    },
+    AssetSpec {
+        asset: "1_6_Strings",
+        kind: TermKind::Festival,
+        rule: KeyRule::Keys(&["DesertFestival", "TroutDerby", "SquidFest"]),
         ..NAME
     },
     AssetSpec {
@@ -820,6 +838,7 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
         KeyRule::Prefixes(prefixes) => prefixes.iter().any(|prefix| key.starts_with(prefix)),
         KeyRule::Suffix(suffix) => key.ends_with(suffix),
         KeyRule::PrefixOrKey(prefix, exact) => key.starts_with(prefix) || key == exact,
+        KeyRule::Keys(keys) => keys.contains(&key),
     }
 }
 
@@ -1615,6 +1634,30 @@ mod tests {
                 ("JojaCola_Name", "Joja-Cola"),
             ],
         );
+        pair(
+            "Strings/UI",
+            &[
+                ("Billboard_NightMarket", "Night Market"),
+                ("Billboard_NothingPosted", "Nothing Posted"),
+            ],
+            &[
+                ("Billboard_NightMarket", "Nachtmarkt"),
+                ("Billboard_NothingPosted", "Nichts ausgehängt"),
+            ],
+        );
+        pair(
+            "Strings/1_6_Strings",
+            &[
+                ("TroutDerby", "Trout Derby"),
+                ("TroutDerby_NowOpen", "Trout Derby Now Open"),
+                ("SquidFestBooth_Intro", "Welcome to SquidFest"),
+            ],
+            &[
+                ("TroutDerby", "Forellenderby"),
+                ("TroutDerby_NowOpen", "Forellenderby eröffnet"),
+                ("SquidFestBooth_Intro", "Willkommen beim Tintenfischfest"),
+            ],
+        );
 
         let glossary = build_from_game(&root, "de").unwrap();
         let find = |source: &str| {
@@ -1669,6 +1712,11 @@ mod tests {
                 "Cotton Candy",
                 ("Zuckerwatte", TermKind::Item, "MovieConcessions"),
             ),
+            ("Night Market", ("Nachtmarkt", TermKind::Festival, "UI")),
+            (
+                "Trout Derby",
+                ("Forellenderby", TermKind::Festival, "1_6_Strings"),
+            ),
         ] {
             assert_eq!(find(source), Some(expected), "{source}");
         }
@@ -1679,6 +1727,9 @@ mod tests {
             "1 Willow Lane",
             "Void Egg",
             "A Brave Little Tale",
+            "Nothing Posted",
+            "Trout Derby Now Open",
+            "Welcome to SquidFest",
         ] {
             assert!(find(absent).is_none(), "{absent} must not be a term");
         }
@@ -2089,6 +2140,10 @@ mod tests {
                 "Sternentautaler Volksfest",
                 TermKind::Festival,
             ),
+            ("Night Market", "Nachtmarkt", TermKind::Festival),
+            ("Desert Festival", "Wüstenfestival", TermKind::Festival),
+            ("Trout Derby", "Forellenderby", TermKind::Festival),
+            ("SquidFest", "Tintenfischfest", TermKind::Festival),
             ("Pelican Town", "Pelikan", TermKind::Location),
             (
                 "Stardrop Saloon",
