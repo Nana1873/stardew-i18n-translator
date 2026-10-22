@@ -1523,13 +1523,17 @@ fn glossary_status(
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
-    let cached =
-        load_active_glossary(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
+    let active = load_active_glossary(&config, &target_lang);
+    let cached = active.as_ref().map(glossary::GlossaryInfo::of);
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     // It only needs a rebuild while this language has no current glossary;
-    // otherwise the note would never go away.
-    let mut outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
+    // otherwise the note would never go away. A usable cache from before the
+    // current term groups also asks for a rebuild, while its hints keep working.
+    let mut outdated_cache = match &active {
+        Some(active) => glossary::is_outdated(active),
+        None => glossary::legacy_cache_present(&config),
+    };
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
