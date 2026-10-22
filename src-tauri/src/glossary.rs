@@ -347,9 +347,10 @@ const CURATED_ASSET: &str = "curated";
 
 /// German names that appear only in dialogue and descriptions, so no name asset
 /// holds them. Hand-checked against the game's most common wording; applied to
-/// official German builds only, after every asset-derived entry.
+/// official German builds only, after every asset-derived entry. "Stardew
+/// Valley" is left out on purpose: mod text often means the game itself
+/// ("Stardew Valley Expanded"), where Sternentautal would be a false hint.
 const CURATED_DE: &[(&str, &str)] = &[
-    ("Stardew Valley", "Sternentautal"),
     ("JojaMart", "Joja-Markt"),
     ("Skull Cavern", "Schädelhöhle"),
     ("Cindersap Forest", "Zundersaftwald"),
