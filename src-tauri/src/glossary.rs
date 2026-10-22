@@ -326,6 +326,42 @@ const NAME_ASSETS: &[AssetSpec] = &[
     },
 ];
 
+/// Provenance label (`asset`) of the hand-checked [`CURATED_DE`] entries.
+const CURATED_ASSET: &str = "curated";
+
+/// German names that appear only in dialogue and descriptions, so no name asset
+/// holds them. Hand-checked against the game's most common wording; applied to
+/// official German builds only, after every asset-derived entry.
+const CURATED_DE: &[(&str, &str)] = &[
+    ("Stardew Valley", "Sternentautal"),
+    ("JojaMart", "Joja-Markt"),
+    ("Skull Cavern", "Schädelhöhle"),
+    ("Cindersap Forest", "Zundersaftwald"),
+    ("Gem Sea", "Edelsteinsee"),
+];
+
+/// Append the curated names for `target_lang`. An English term an asset already
+/// defines keeps its asset-derived entry. The quality gate is skipped: these
+/// are reviewed by hand.
+fn add_curated_entries(entries: &mut Vec<GlossaryEntry>, target_lang: &str) {
+    let curated = match target_lang {
+        "de" => CURATED_DE,
+        _ => return,
+    };
+    let mut seen: HashSet<String> = entries.iter().map(|entry| entry.source.clone()).collect();
+    for (source, target) in curated {
+        if seen.insert((*source).to_string()) {
+            entries.push(GlossaryEntry {
+                source: (*source).to_string(),
+                target: (*target).to_string(),
+                kind: TermKind::Location,
+                asset: CURATED_ASSET.to_string(),
+                key: (*source).to_string(),
+            });
+        }
+    }
+}
+
 /// Official glossary entries whose `source` occurs as a whole word in `source`.
 /// **Case-sensitive** (named entities are capitalized, so a UI term like `Play`
 /// must not fire on the lowercase verb in prose); terms shorter than 3 chars are
@@ -613,7 +649,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
             .inspect_err(|error| note(asset, format!("{file}: {error}")))
             .ok()
     };
-    let entries = build_entries(
+    let mut entries = build_entries(
         &|asset| {
             let english = read(asset, format!("{asset}.xnb"));
             let target = format!("{asset}.{suffix}.xnb");
@@ -630,6 +666,9 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
         log::warn!(target: "app", "Game XNB skipped for the glossary: {problem}");
     }
     if !entries.is_empty() {
+        // Only on top of real asset names: curated terms alone never make a
+        // glossary out of unreadable game files.
+        add_curated_entries(&mut entries, target_lang);
         return Ok(Glossary {
             format: GLOSSARY_FORMAT,
             source_lang: "default".to_string(),
@@ -1722,10 +1761,94 @@ mod tests {
         let glossary = build_from_game(&root, "de").unwrap();
 
         assert_eq!(glossary.source, GlossarySource::Official);
-        assert_eq!(glossary.term_count, 1);
+        assert_eq!(glossary.term_count, 1 + CURATED_DE.len());
         assert_eq!(glossary.entries[0].source, "Parsnip");
         assert_eq!(glossary.entries[0].target, "Pastinake");
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn curated_german_names_are_added_to_official_german_builds_only() {
+        let root = crate::test_support::temp_dir("glossary-curated");
+        let strings = root.join("Content").join("Strings");
+        for (file, value) in [
+            ("Objects.xnb", "Parsnip"),
+            ("Objects.de-DE.xnb", "Pastinake"),
+            ("Objects.fr-FR.xnb", "Panais"),
+        ] {
+            write_bytes(&strings.join(file), &test_xnb_dictionary(&[("24", value)]));
+        }
+        let curated_of = |glossary: &Glossary| {
+            glossary
+                .entries
+                .iter()
+                .filter(|e| e.asset == CURATED_ASSET)
+                .map(|e| (e.source.clone(), e.target.clone(), e.kind))
+                .collect::<Vec<_>>()
+        };
+
+        let german = build_from_game(&root, "de").unwrap();
+        let curated = curated_of(&german);
+        assert_eq!(curated.len(), CURATED_DE.len());
+        assert!(curated.contains(&(
+            "Stardew Valley".into(),
+            "Sternentautal".into(),
+            TermKind::Location
+        )));
+        assert!(curated.contains(&("Gem Sea".into(), "Edelsteinsee".into(), TermKind::Location)));
+        assert_eq!(german.entries[0].source, "Parsnip", "curated come last");
+        assert_eq!(german.term_count, german.entries.len());
+
+        let french = build_from_game(&root, "fr").unwrap();
+        assert!(curated_of(&french).is_empty());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn curated_names_skip_packs_and_never_override_asset_entries() {
+        let mut entries = vec![GlossaryEntry {
+            source: "Gem Sea".to_string(),
+            target: "Juwelenmeer".to_string(),
+            kind: TermKind::Location,
+            asset: "WorldMap".to_string(),
+            key: "GemSea".to_string(),
+        }];
+        add_curated_entries(&mut entries, "de");
+        assert_eq!(entries.len(), CURATED_DE.len());
+        assert_eq!(entries[0].target, "Juwelenmeer");
+        assert_eq!(entries[0].asset, "WorldMap");
+        assert_eq!(
+            entries.iter().filter(|e| e.source == "Gem Sea").count(),
+            1,
+            "no duplicate for an asset-defined term"
+        );
+
+        let mut other = Vec::new();
+        add_curated_entries(&mut other, "fr");
+        assert!(other.is_empty());
+
+        // Pack builds never call the hook; check with a German pack file set.
+        let root = crate::test_support::temp_dir("glossary-curated-pack");
+        let game = root.join("game");
+        let pack = root.join("pack");
+        write_bytes(
+            &game.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip")]),
+        );
+        write(&pack.join("Objects.json"), r#"{"24":"Pastinake"}"#);
+        let glossary = build_from_pack(
+            &game,
+            &pack,
+            &pack,
+            StringAssetFormat::Json,
+            "de",
+            "Test Pack",
+        )
+        .unwrap();
+        assert!(glossary.entries.iter().all(|e| e.asset != CURATED_ASSET));
+        assert_eq!(glossary.entries.len(), 1);
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -1940,7 +2063,11 @@ mod tests {
         );
         let built =
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
-        assert_eq!(built.term_count, direct.len());
+        let curated = |entry: &&GlossaryEntry| entry.asset == CURATED_ASSET;
+        assert_eq!(
+            built.entries.iter().filter(|e| !curated(e)).count(),
+            direct.len()
+        );
         eprintln!("glossary: direct XNB terms {}", direct.len());
 
         // Spot checks for the Strings and Data name groups (German 1.6).

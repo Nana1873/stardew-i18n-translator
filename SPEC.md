@@ -348,7 +348,9 @@ The glossary supplies high-confidence names for items, tools, weapons, clothing
 animals, monsters, movies, and seasons, not prose. Built-in languages read the
 game's `Content/Strings/*.xnb` dictionaries and the string dictionaries
 `Data/Boots`, `Data/hats`, `Data/Monsters`, and `Data/Festivals/FestivalDates`
-directly; no unpacking tool is needed. Custom-language packs may supply local
+directly; no unpacking tool is needed. The official German glossary also holds
+a few hand-checked names that only appear in prose, such as Sternentautal for
+Stardew Valley; they never replace a name read from the game files. Custom-language packs may supply local
 `Strings` JSON or XNB files, paired with the English names from the same game
 files. A glossary built by an older app version keeps working and is marked for
 a rebuild when a rebuild is possible; a term category the app does not know does not disable the glossary.

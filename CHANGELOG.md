@@ -20,6 +20,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   movies, and movie snacks. Rebuild the glossary in Settings to add them; an
   older glossary keeps working until then. After going back to 2.5.1 or older,
   rebuild a glossary built by this version.
+- The German glossary now also has a few names that only appear in dialogue,
+  such as Stardew Valley (Sternentautal) and JojaMart (Joja-Markt). Rebuild the
+  glossary in Settings to add them.
 
 ### Fixed
 
