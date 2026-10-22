@@ -156,6 +156,12 @@ const KIND_LABEL: Record<TermKind, string> = {
   npc: "NPC",
   location: "Place",
   season: "Season",
+  festival: "Festival",
+  building: "Building",
+  animal: "Animal",
+  monster: "Monster",
+  movie: "Movie",
+  unknown: "Term",
 };
 
 /** Official glossary entries that occur as whole words in the source text.

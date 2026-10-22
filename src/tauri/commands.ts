@@ -736,7 +736,8 @@ export interface GlossaryStatus {
   /** The game's Content/Strings XNB files are available for glossary extraction (same as gameXnbPresent). */
   sourceAvailable: boolean;
   cached: GlossaryInfo | null;
-  /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
+  /** The cache is from an older app version or invalid — rebuild recommended.
+   * False when no rebuild is possible. */
   outdatedCache: boolean;
   /**
    * For a game-unsupported language, whether an installed community language pack
@@ -773,21 +774,28 @@ export type TermKind =
   | "clothing"
   | "npc"
   | "location"
-  | "season";
+  | "season"
+  | "festival"
+  | "building"
+  | "animal"
+  | "monster"
+  | "movie"
+  /** A kind written by a newer app version (the term still applies). */
+  | "unknown";
 
 /** One typed official term (mirrors Rust `GlossaryEntry`). */
 export interface GlossaryEntry {
   source: string;
   target: string;
   kind: TermKind;
-  /** Source `Strings/*` asset (provenance). */
+  /** Source asset, such as `Objects` or `Data/Boots` (provenance). */
   asset: string;
   /** Source key within the asset (provenance). */
   key: string;
 }
 
 export interface Glossary {
-  /** Cache schema version (2 = typed entries). */
+  /** Cache schema version (2 = typed entries, 3 = more name groups). */
   format: number;
   sourceLang: string;
   targetLang: string;

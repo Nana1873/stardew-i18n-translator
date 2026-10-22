@@ -1,11 +1,11 @@
 //! Official game and community-pack glossary. See SPEC.md, Optional Glossary and AI.
 //!
 //! The glossary is a **typed, high-confidence** dictionary of official Stardew
-//! terms — item / craftable / weapon / tool / clothing / NPC / location names
-//! and seasons. Each entry carries its `kind` (category) plus the source asset
-//! and key it came from. It powers manual translation hints (and the local-AI
-//! prompt). It is **optional and non-blocking**: if the data is unavailable, the
-//! tool works fully without it.
+//! names (items, characters, places and more; see [`TermKind`]) and seasons.
+//! Each entry carries its `kind` (category) plus the source asset and key it
+//! came from. It powers manual translation hints (and the local-AI prompt). It
+//! is **optional and non-blocking**: if the data is unavailable, the tool works
+//! fully without it.
 //!
 //! Precision beats recall: a wrong match poisons editor hints and the local-AI
 //! prompt, so we only keep short official names — never prose, dialogue, or UI
@@ -14,9 +14,9 @@
 //! strict term-like quality gate.
 //!
 //! Data sources are deliberately narrow and read-only. The installed game's
-//! `Content/Strings/*.xnb` string dictionaries are decoded directly; no
-//! unpacking tool is needed. Community language packs may supply the
-//! corresponding target dictionaries (as XNB or JSON).
+//! `Content/Strings/*.xnb` (and a few `Content/Data/*.xnb`) string dictionaries
+//! are decoded directly; no unpacking tool is needed. Community language packs
+//! may supply the corresponding target `Strings` dictionaries (as XNB or JSON).
 //! English and target values are paired by key before the quality gate runs.
 
 use std::collections::{HashMap, HashSet};
@@ -27,12 +27,22 @@ use serde_json::Value;
 
 use crate::xnb;
 
-/// On-disk cache schema version. Bumped from the untyped v1 (`{ terms: {…} }`)
-/// to the typed v2 (`{ entries: [...] }`); `load` ignores any other version.
-pub const GLOSSARY_FORMAT: u32 = 2;
+/// On-disk cache schema version written by this app: v1 was untyped, v2 typed
+/// `entries`, v3 the same layout with more name groups. An older typed cache
+/// still loads; the status asks for a rebuild.
+pub const GLOSSARY_FORMAT: u32 = 3;
+
+/// The oldest cache format `load` accepts: the first typed layout. Newer
+/// formats load too as long as they parse, so a cache from a newer app keeps
+/// working here instead of silently disabling the glossary.
+const MIN_GLOSSARY_FORMAT: u32 = 2;
 
 /// Category of an official term. Encodes confidence (each kind is restricted to
 /// a content asset and key rule) and drives the editor's category chip.
+///
+/// Adding a kind needs no format bump: a kind this app does not know (from a
+/// cache built by a newer version) loads as [`TermKind::Unknown`] instead of
+/// failing the whole cache.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TermKind {
@@ -44,6 +54,14 @@ pub enum TermKind {
     Npc,
     Location,
     Season,
+    Festival,
+    Building,
+    Animal,
+    Monster,
+    Movie,
+    /// A kind from a newer app version; the term itself is still usable.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Where a glossary's term pairs came from. `Official` uses the installed
@@ -108,13 +126,46 @@ enum KeyRule {
     NameOnly,
     /// Only the four season keys in `StringsFromCSFiles`.
     Seasons,
+    /// Only keys starting with one of these prefixes (assets that mix names
+    /// with menu choices and dialogue under other keys, `MapPage.cs.`).
+    Prefixes(&'static [&'static str]),
+    /// Only keys ending with this suffix (`_Title`).
+    Suffix(&'static str),
+    /// Keys starting with the prefix, or exactly the one extra key.
+    PrefixOrKey(&'static str, &'static str),
 }
 
+/// One asset the glossary reads: which keys and which part of each value hold a
+/// name, and how strictly the names are screened. `asset` is a `Strings` asset
+/// name (`Objects`), or `Data/…` for a `Content/Data` dictionary.
+#[derive(Clone, Copy)]
 struct AssetSpec {
     asset: &'static str,
     kind: TermKind,
     rule: KeyRule,
+    value: ValuePart,
+    /// Keep single-word names. False where single words are ordinary
+    /// vocabulary with the ordinary translation (`Bat`, `Pig`, `Popcorn`).
+    single_words: bool,
+    /// Skip values with digits or brackets (opening hours, addresses, tokens).
+    strict: bool,
 }
+
+/// Defaults for [`TYPED_ASSETS`]: the whole value, shared quality gate only.
+const TYPED: AssetSpec = AssetSpec {
+    asset: "",
+    kind: TermKind::Item,
+    rule: KeyRule::Bare,
+    value: ValuePart::Whole,
+    single_words: true,
+    strict: false,
+};
+
+/// Defaults for [`NAME_ASSETS`]: strict screening, single words allowed.
+const NAME: AssetSpec = AssetSpec {
+    strict: true,
+    ..TYPED
+};
 
 /// Typed content assets, in priority order — when the same English name appears
 /// in several assets, the first one wins (item names beat stray collisions).
@@ -124,47 +175,154 @@ const TYPED_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Objects",
         kind: TermKind::Item,
-        rule: KeyRule::Bare,
+        ..TYPED
     },
     AssetSpec {
         asset: "BigCraftables",
         kind: TermKind::BigCraftable,
-        rule: KeyRule::Bare,
+        ..TYPED
     },
     AssetSpec {
         asset: "Weapons",
         kind: TermKind::Weapon,
         rule: KeyRule::NameOnly,
+        ..TYPED
     },
     AssetSpec {
         asset: "Tools",
         kind: TermKind::Tool,
         rule: KeyRule::NameOnly,
+        ..TYPED
     },
     AssetSpec {
         asset: "Pants",
         kind: TermKind::Clothing,
         rule: KeyRule::NameOnly,
+        ..TYPED
     },
     AssetSpec {
         asset: "Shirts",
         kind: TermKind::Clothing,
         rule: KeyRule::NameOnly,
+        ..TYPED
     },
     AssetSpec {
         asset: "NPCNames",
         kind: TermKind::Npc,
-        rule: KeyRule::Bare,
+        ..TYPED
     },
     AssetSpec {
         asset: "Locations",
         kind: TermKind::Location,
-        rule: KeyRule::Bare,
+        // The asset also holds menu choices (`AnimalShop_Marnie_Leave`) and
+        // dialogue, so only key groups that are real names are read.
+        rule: KeyRule::Prefixes(&[
+            "AdventureGuild_KillList_",
+            "AdventureGuild_ItemRecovery",
+            "CommunityCenter_AreaName_",
+            "MineCart_Destination_",
+        ]),
+        ..TYPED
     },
     AssetSpec {
         asset: "StringsFromCSFiles",
         kind: TermKind::Season,
         rule: KeyRule::Seasons,
+        ..TYPED
+    },
+];
+
+/// Which part of a dictionary value holds the display name.
+#[derive(Clone, Copy)]
+enum ValuePart {
+    /// The whole value.
+    Whole,
+    /// The first line (`\n` or the game's `^`): map labels list opening hours
+    /// or an address below the name.
+    FirstLine,
+    /// One `/`-separated field of a `Data/*` record (0-based).
+    Field(usize),
+    /// The last `/`-separated field (`Data/Monsters` keeps its display name there).
+    LastField,
+}
+
+/// Further official name groups, read after [`TYPED_ASSETS`] (so an item name
+/// still wins a collision). Their names often share a value with opening hours,
+/// addresses, stats or tokens, so values with digits or brackets are skipped.
+/// Single-word monsters, animals, hats and concessions are ordinary words and
+/// are dropped; single-word buildings and places stay, since the official term
+/// often differs from the everyday one (`Barn` -> `Stall`, not `Scheune`).
+/// `Data/*` assets are official-only; community packs supply `Strings` only.
+///
+/// Only string dictionaries are read. `Data/Locations`, `Data/WorldMap` and
+/// `Data/PassiveFestivals` are typed objects that the narrow XNB reader does not
+/// decode; their display names point at `StringsFromCSFiles` (`MapPage.cs.*`)
+/// and `Strings/WorldMap`, which are read here instead.
+const NAME_ASSETS: &[AssetSpec] = &[
+    AssetSpec {
+        asset: "Data/Festivals/FestivalDates",
+        kind: TermKind::Festival,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "Buildings",
+        kind: TermKind::Building,
+        rule: KeyRule::NameOnly,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "StringsFromCSFiles",
+        kind: TermKind::Location,
+        // `IslandName` is the only plain `Ginger Island` string in the game.
+        rule: KeyRule::PrefixOrKey("MapPage.cs.", "IslandName"),
+        value: ValuePart::FirstLine,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "WorldMap",
+        kind: TermKind::Location,
+        value: ValuePart::FirstLine,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "FarmAnimals",
+        kind: TermKind::Animal,
+        rule: KeyRule::Prefixes(&["DisplayType_"]),
+        single_words: false,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "Data/Boots",
+        kind: TermKind::Clothing,
+        value: ValuePart::Field(6),
+        ..NAME
+    },
+    AssetSpec {
+        asset: "Data/hats",
+        kind: TermKind::Clothing,
+        value: ValuePart::Field(5),
+        single_words: false,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "Data/Monsters",
+        kind: TermKind::Monster,
+        value: ValuePart::LastField,
+        single_words: false,
+        ..NAME
+    },
+    AssetSpec {
+        asset: "Movies",
+        kind: TermKind::Movie,
+        rule: KeyRule::Suffix("_Title"),
+        ..NAME
+    },
+    AssetSpec {
+        asset: "MovieConcessions",
+        kind: TermKind::Item,
+        rule: KeyRule::NameOnly,
+        single_words: false,
+        ..NAME
     },
 ];
 
@@ -292,8 +450,8 @@ pub struct GlossaryStatus {
     pub source_available: bool,
     /// The currently cached glossary, if a valid typed one exists.
     pub cached: Option<GlossaryInfo>,
-    /// A `glossary.json` exists but is old/invalid (untyped v1 or unparseable),
-    /// so the UI should recommend a rebuild.
+    /// The UI should recommend a rebuild: the cache predates `GLOSSARY_FORMAT`,
+    /// or a legacy `glossary.json` is old/invalid. False when no rebuild is possible.
     pub outdated_cache: bool,
     /// For a game-unsupported language, whether an installed community language
     /// pack was detected that could supply a glossary. Always false for
@@ -350,10 +508,10 @@ pub fn typed_asset_names() -> Vec<&'static str> {
     TYPED_ASSETS.iter().map(|spec| spec.asset).collect()
 }
 
-/// Extract typed entries by pairing the English dictionary of each typed asset
+/// Extract typed entries by pairing the English dictionary of each asset
 /// with its target dictionary. Official content stores the locale inline
 /// (`Objects.de-DE.xnb`), while a community pack uses its own file names
-/// (`Objects.json`, `Objects_th.xnb`). The first typed asset to define a name
+/// (`Objects.json`, `Objects_th.xnb`). The first asset to define a name
 /// wins (priority order).
 fn build_entries(
     english_map: &dyn Fn(&str) -> Option<HashMap<String, String>>,
@@ -362,7 +520,7 @@ fn build_entries(
 ) -> Vec<GlossaryEntry> {
     let mut entries: Vec<GlossaryEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for spec in TYPED_ASSETS {
+    for spec in TYPED_ASSETS.iter().chain(NAME_ASSETS) {
         let base = english_map(spec.asset);
         let localized = target_map(spec.asset);
         let (Some(base), Some(localized)) = (base, localized) else {
@@ -379,17 +537,29 @@ fn build_entries(
             let Some(target) = localized.get(key) else {
                 continue;
             };
+            let (Some(english), Some(target)) = (
+                value_part(&base[key], spec.value),
+                value_part(target, spec.value),
+            ) else {
+                continue;
+            };
+            if spec.strict && (has_digit_or_bracket(english) || has_digit_or_bracket(target)) {
+                continue;
+            }
             // Season tokens are stored lowercase (`spring`), but appear
             // capitalized in mod text (`Spring`); normalize so the term-like gate
             // accepts them and case-sensitive matching can fire.
             let english = if matches!(spec.rule, KeyRule::Seasons) {
-                capitalize_first(&base[key])
+                capitalize_first(english)
             } else {
-                base[key].clone()
+                english.to_string()
             };
             let Some((source, target)) = glossary_term(&english, target, target_lang) else {
                 continue;
             };
+            if !spec.single_words && source.split_whitespace().count() < 2 {
+                continue;
+            }
             // First typed asset to define a name wins (assets are in priority
             // order), so an item name beats a stray collision elsewhere.
             if !seen.insert(source.clone()) {
@@ -411,7 +581,8 @@ fn build_entries(
 const NO_GAME_STRINGS: &str = "The game's Content/Strings folder was not found. Check that the Stardew Valley folder in Settings is correct, then build the glossary again.";
 
 /// Build the official glossary from the installed game's `Content/Strings`
-/// XNB dictionaries (English base + the inline `.<locale>.xnb` variant).
+/// (and the few `Content/Data`) XNB dictionaries: English base + the inline
+/// `.<locale>.xnb` variant.
 pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossary, String> {
     let suffix = game_locale_suffix(target_lang)
         .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
@@ -419,6 +590,12 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
     if !strings_dir.is_dir() {
         return Err(NO_GAME_STRINGS.to_string());
     }
+    // `Data/…` assets live in `Content/Data`, all others in `Content/Strings`.
+    let data_dir = stardew_path.join("Content").join("Data");
+    let path_of = |file: &str| match file.strip_prefix("Data/") {
+        Some(file) => data_dir.join(file),
+        None => strings_dir.join(file),
+    };
     // The first problem per asset, kept so a failed build can name the cause.
     let problems = std::cell::RefCell::new(Vec::<(String, String)>::new());
     let note = |asset: &str, problem: String| {
@@ -428,7 +605,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
         }
     };
     let read = |asset: &str, file: String| {
-        let path = strings_dir.join(&file);
+        let path = path_of(&file);
         if !path.is_file() {
             return None;
         }
@@ -440,7 +617,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
         &|asset| {
             let english = read(asset, format!("{asset}.xnb"));
             let target = format!("{asset}.{suffix}.xnb");
-            if english.is_some() && !strings_dir.join(&target).is_file() {
+            if english.is_some() && !path_of(&target).is_file() {
                 note(asset, format!("{target} is missing"));
             }
             english
@@ -450,7 +627,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
     );
     let problems = problems.into_inner();
     for (_, problem) in &problems {
-        log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {problem}");
+        log::warn!(target: "app", "Game XNB skipped for the glossary: {problem}");
     }
     if !entries.is_empty() {
         return Ok(Glossary {
@@ -512,6 +689,10 @@ pub fn build_from_pack(
         .canonicalize()
         .map_err(|error| format!("Could not identify the language pack folder: {error}"))?;
     let target_map = |asset: &str| {
+        // Packs supply `Strings` only; `Data/…` names stay official-only.
+        if asset.starts_with("Data/") {
+            return None;
+        }
         let filename = match pack_format {
             StringAssetFormat::Json => format!("{asset}.json"),
             StringAssetFormat::Xnb => format!("{asset}_{target_lang}.xnb"),
@@ -531,6 +712,9 @@ pub fn build_from_pack(
     let english_read = std::cell::Cell::new(false);
     let entries = build_entries(
         &|asset| {
+            if asset.starts_with("Data/") {
+                return None;
+            }
             let file = format!("{asset}.xnb");
             let path = game_strings.join(&file);
             if !path.is_file() {
@@ -538,10 +722,12 @@ pub fn build_from_pack(
             }
             let english = xnb::read_string_dictionary(&path)
                 .inspect_err(|error| {
-                    log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {file}: {error}");
-                    problems
-                        .borrow_mut()
-                        .push((asset.to_string(), format!("{file}: {error}")));
+                    let mut problems = problems.borrow_mut();
+                    // `StringsFromCSFiles` feeds two groups; report it once.
+                    if !problems.iter().any(|(seen, _)| seen == asset) {
+                        log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {file}: {error}");
+                        problems.push((asset.to_string(), format!("{file}: {error}")));
+                    }
                 })
                 .ok();
             english_read.set(english_read.get() || english.is_some());
@@ -592,7 +778,30 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
             key.to_ascii_lowercase().as_str(),
             "spring" | "summer" | "fall" | "winter"
         ),
+        KeyRule::Prefixes(prefixes) => prefixes.iter().any(|prefix| key.starts_with(prefix)),
+        KeyRule::Suffix(suffix) => key.ends_with(suffix),
+        KeyRule::PrefixOrKey(prefix, exact) => key.starts_with(prefix) || key == exact,
     }
+}
+
+/// The part of `value` that holds the display name, or `None` when a `Data/*`
+/// record has fewer fields.
+fn value_part(value: &str, part: ValuePart) -> Option<&str> {
+    match part {
+        ValuePart::Whole => Some(value),
+        // `^` is the game's line break in UI text.
+        ValuePart::FirstLine => value.split(['\n', '\r', '^']).next(),
+        ValuePart::Field(index) => value.split('/').nth(index),
+        ValuePart::LastField => value.rsplit('/').next(),
+    }
+}
+
+/// Whether a value carries digits or brackets: opening hours, addresses, stats,
+/// or tokens such as `[LocalizedText …]` rather than a plain name.
+fn has_digit_or_bracket(value: &str) -> bool {
+    value
+        .chars()
+        .any(|c| c.is_numeric() || matches!(c, '[' | ']' | '(' | ')' | '{' | '}' | '<' | '>'))
 }
 
 /// Accept a pair only if it is a short, term-like official name (not prose, not
@@ -622,8 +831,15 @@ fn glossary_term(english: &str, target: &str, target_lang: &str) -> Option<(Stri
     if is_common_ui_word(en) {
         return None;
     }
-    if en.chars().count() > 30 || en.split_whitespace().count() > 4 {
-        return None; // exclude descriptions / dialogue prose
+    // Function words inside a name do not count, so `Feast of the Winter Star`
+    // stays a name while longer descriptions / dialogue prose are excluded.
+    // Titles capitalize them (`It Howls In The Rain`), so case is ignored here.
+    let content_words = en
+        .split_whitespace()
+        .filter(|word| !is_name_function_word(&word.to_lowercase()))
+        .count();
+    if en.chars().count() > 30 || content_words > 4 {
+        return None;
     }
     // A clean name maps roughly 1:1; German compounds rather than expands, so a
     // target with several more words than the source is a mis-paired dialogue
@@ -658,6 +874,7 @@ fn is_common_ui_word(term: &str) -> bool {
         "exit", "menu", "options", "settings", "save", "load", "continue", "help", "done", "close",
         "open", "skip", "start", "stop", "new", "delete", "remove", "add", "edit", "on", "off",
         "book", "right", "left", "up", "down", "and", "or", "with", "good", "bad", "ran", "run",
+        "leave", "shop", "rules", "hint", "well",
     ];
     STOPWORDS.iter().any(|word| term.eq_ignore_ascii_case(word))
 }
@@ -750,13 +967,16 @@ pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
 }
 
 /// Load the cached glossary for `lang`, or `None` when its file is missing,
-/// unparseable, or an old/incompatible format. Because the cache is keyed by
+/// unparseable, or older than the typed format. Because the cache is keyed by
 /// language, an unsupported language (which never builds a file) always loads
-/// `None`, and a stale build for another language can never leak in. Never panics.
+/// `None`, and a stale build for another language can never leak in. Unknown
+/// term kinds from a newer app load as [`TermKind::Unknown`]. Never panics.
 pub fn load(config_dir: &Path, lang: &str) -> Option<Glossary> {
     let body = crate::input_limits::read_json_text(&glossary_path(config_dir, lang)?).ok()?;
     let glossary: Glossary = serde_json::from_str(&body).ok()?;
-    if glossary.format != GLOSSARY_FORMAT || glossary.target_lang != lang {
+    // Any parseable format from 2 up is accepted, so a future breaking change
+    // must rename fields or change the layout, not only bump `format`.
+    if glossary.format < MIN_GLOSSARY_FORMAT || glossary.target_lang != lang {
         return None;
     }
     Some(glossary)
@@ -782,8 +1002,8 @@ pub fn migrate_legacy_cache(config_dir: &Path) {
     let Ok(glossary) = serde_json::from_str::<Glossary>(&body) else {
         return; // unparseable → leave it for the outdated-cache flag
     };
-    if glossary.format != GLOSSARY_FORMAT {
-        return; // old format → leave it for the outdated-cache flag
+    if glossary.format < MIN_GLOSSARY_FORMAT {
+        return; // untyped format → leave it for the outdated-cache flag
     }
     let Some(target) = glossary_path(config_dir, &glossary.target_lang) else {
         return;
@@ -1092,6 +1312,14 @@ mod tests {
             Some(("Ring of Yoba".to_string(), "Ring von Yoba".to_string()))
         );
         assert!(glossary_term("Message in a Bottle", "Flaschenpost", "de").is_some());
+        // Function words do not count toward the word limit.
+        assert!(glossary_term("Feast of the Winter Star", "Fest des Wintersterns", "de").is_some());
+        // Title Case capitalizes them, which does not make them count.
+        assert!(glossary_term("It Howls In The Rain", "Das Geheul im Regen", "de").is_some());
+        assert_eq!(
+            glossary_term("Big Red Shiny Lucky Hat", "Großer roter Hut", "de"),
+            None
+        );
         // A leading function word or any other lowercase word is still prose.
         assert_eq!(glossary_term("the Farm", "der Hof", "de"), None);
         assert_eq!(glossary_term("Ring for Yoba", "Ring für Yoba", "de"), None);
@@ -1154,18 +1382,27 @@ mod tests {
         // NPCNames: clean single-word names.
         xnb("NPCNames.xnb", &[("Abigail", "Abigail")]);
         xnb("NPCNames.de-DE.xnb", &[("Abigail", "Abby")]);
-        // Locations: a real place name (kept) + a prose/format value (rejected).
+        // Locations: only name key groups are kept (room, kill-list monster);
+        // menu choices and prose/format values are rejected.
         xnb(
             "Locations.xnb",
             &[
-                ("Town", "Pelican Town"),
+                ("CommunityCenter_AreaName_Pantry", "Pantry"),
+                ("AdventureGuild_KillList_Bats", "Bats"),
+                ("AnimalShop_Marnie_Animals", "Purchase Animals"),
+                ("AnimalShop_Marnie_Leave", "Leave"),
+                ("Blacksmith_Clint_Shop", "Shop"),
                 ("Beach_Sign", "Welcome to the beach! Watch for {0}."),
             ],
         );
         xnb(
             "Locations.de-DE.xnb",
             &[
-                ("Town", "Pelikanstadt"),
+                ("CommunityCenter_AreaName_Pantry", "Speisekammer"),
+                ("AdventureGuild_KillList_Bats", "Fledermäuse"),
+                ("AnimalShop_Marnie_Animals", "Tiere kaufen"),
+                ("AnimalShop_Marnie_Leave", "Verlassen"),
+                ("Blacksmith_Clint_Shop", "Laden"),
                 ("Beach_Sign", "Willkommen am Strand! Achte auf {0}."),
             ],
         );
@@ -1191,10 +1428,12 @@ mod tests {
         assert_eq!(find("Parsnip").map(|e| e.kind), Some(TermKind::Item));
         assert_eq!(find("Galaxy Sword").map(|e| e.kind), Some(TermKind::Weapon));
         assert_eq!(find("Abigail").map(|e| e.kind), Some(TermKind::Npc));
-        assert_eq!(
-            find("Pelican Town").map(|e| e.kind),
-            Some(TermKind::Location)
-        );
+        assert_eq!(find("Pantry").map(|e| e.kind), Some(TermKind::Location));
+        assert_eq!(find("Bats").map(|e| e.kind), Some(TermKind::Location));
+        // Menu choices from Strings/Locations are not names.
+        for menu in ["Leave", "Shop", "Purchase Animals"] {
+            assert!(find(menu).is_none(), "{menu}");
+        }
         assert_eq!(find("Spring").map(|e| e.kind), Some(TermKind::Season));
 
         // Excluded: descriptions, format strings, greeting prose.
@@ -1205,6 +1444,205 @@ mod tests {
             .entries
             .iter()
             .all(|e| !e.source.starts_with("Welcome")));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn builds_festival_place_building_animal_clothing_monster_and_movie_names() {
+        let root = crate::test_support::temp_dir("glossary-name-groups");
+        let content = root.join("Content");
+        let pair = |file: &str, english: &[(&str, &str)], german: &[(&str, &str)]| {
+            write_bytes(
+                &content.join(format!("{file}.xnb")),
+                &test_xnb_dictionary(english),
+            );
+            write_bytes(
+                &content.join(format!("{file}.de-DE.xnb")),
+                &test_xnb_dictionary(german),
+            );
+        };
+
+        // An item name also listed as a concession stays an item.
+        pair(
+            "Strings/Objects",
+            &[("167", "Joja Cola")],
+            &[("167", "Joja-Cola")],
+        );
+        pair(
+            "Data/Festivals/FestivalDates",
+            &[("winter25", "Feast of the Winter Star")],
+            &[("winter25", "Fest des Wintersterns")],
+        );
+        // Map labels: the name is the first line; addresses are not names.
+        pair(
+            "Strings/StringsFromCSFiles",
+            &[
+                (
+                    "MapPage.cs.11065",
+                    "Stardrop Saloon^Open 12:00PM to 12:00AM",
+                ),
+                ("MapPage.cs.11066", "1 Willow Lane"),
+                ("Menu.cs.1", "Inventory"),
+            ],
+            &[
+                (
+                    "MapPage.cs.11065",
+                    "Kneipe zum Sternenfall^Geöffnet 12 bis 24 Uhr",
+                ),
+                ("MapPage.cs.11066", "Weidenweg 1"),
+                ("Menu.cs.1", "Inventar"),
+            ],
+        );
+        pair(
+            "Strings/WorldMap",
+            &[("CommunityCenter", "Community Center")],
+            &[("CommunityCenter", "Gemeinschaftszentrum")],
+        );
+        // Single-word buildings stay (the official term differs from the
+        // everyday word), but not one that is also a common word.
+        pair(
+            "Strings/Buildings",
+            &[("Barn_Name", "Barn"), ("Well_Name", "Well")],
+            &[("Barn_Name", "Stall"), ("Well_Name", "Brunnen")],
+        );
+        pair(
+            "Strings/FarmAnimals",
+            &[
+                ("DisplayType_VoidChicken", "Void Chicken"),
+                ("Void_Egg", "Void Egg"),
+            ],
+            &[
+                ("DisplayType_VoidChicken", "Schattenhuhn"),
+                ("Void_Egg", "Schattenei"),
+            ],
+        );
+        pair(
+            "Data/Boots",
+            &[(
+                "506",
+                "Rubber Boots/Protection from the elements./100/0/1/3/Rubber Boots",
+            )],
+            &[(
+                "506",
+                "Rubber Boots/Schutz vor den Elementen./100/0/1/3/Regenstiefel",
+            )],
+        );
+        pair(
+            "Data/hats",
+            &[("2", "Top Hat/A gentleman's classic./false/true//Top Hat")],
+            &[("2", "Top Hat/Ein Klassiker./false/true//Zylinder")],
+        );
+        // Single-word monsters (like animals, hats, concessions) are ordinary words.
+        pair(
+            "Data/Monsters",
+            &[
+                (
+                    "Shadow Brute",
+                    "125/15/0/0/false/2000/769 .75/2/.01/4/2/.00/true/2/Shadow Brute",
+                ),
+                ("Bat", "24/5/0/0/true/1000/767 .9/1/.01/4/2/.00/true/1/Bat"),
+            ],
+            &[
+                (
+                    "Shadow Brute",
+                    "125/15/0/0/false/2000/769 .75/2/.01/4/2/.00/true/2/Schattenbestie",
+                ),
+                (
+                    "Bat",
+                    "24/5/0/0/true/1000/767 .9/1/.01/4/2/.00/true/1/Fledermaus",
+                ),
+            ],
+        );
+        pair(
+            "Strings/Movies",
+            &[
+                ("BraveSapling_Title", "The Brave Little Sapling"),
+                ("BraveSapling_Description", "A Brave Little Tale"),
+            ],
+            &[
+                ("BraveSapling_Title", "Der tapfere kleine Setzling"),
+                ("BraveSapling_Description", "Ein tapferes Maerchen"),
+            ],
+        );
+        pair(
+            "Strings/MovieConcessions",
+            &[
+                ("CottonCandy_Name", "Cotton Candy"),
+                ("JojaCola_Name", "Joja Cola"),
+            ],
+            &[
+                ("CottonCandy_Name", "Zuckerwatte"),
+                ("JojaCola_Name", "Joja-Cola"),
+            ],
+        );
+
+        let glossary = build_from_game(&root, "de").unwrap();
+        let find = |source: &str| {
+            glossary
+                .entries
+                .iter()
+                .find(|e| e.source == source)
+                .map(|e| (e.target.as_str(), e.kind, e.asset.as_str()))
+        };
+
+        for (source, expected) in [
+            ("Joja Cola", ("Joja-Cola", TermKind::Item, "Objects")),
+            (
+                "Feast of the Winter Star",
+                (
+                    "Fest des Wintersterns",
+                    TermKind::Festival,
+                    "Data/Festivals/FestivalDates",
+                ),
+            ),
+            (
+                "Stardrop Saloon",
+                (
+                    "Kneipe zum Sternenfall",
+                    TermKind::Location,
+                    "StringsFromCSFiles",
+                ),
+            ),
+            (
+                "Community Center",
+                ("Gemeinschaftszentrum", TermKind::Location, "WorldMap"),
+            ),
+            ("Barn", ("Stall", TermKind::Building, "Buildings")),
+            (
+                "Void Chicken",
+                ("Schattenhuhn", TermKind::Animal, "FarmAnimals"),
+            ),
+            (
+                "Rubber Boots",
+                ("Regenstiefel", TermKind::Clothing, "Data/Boots"),
+            ),
+            ("Top Hat", ("Zylinder", TermKind::Clothing, "Data/hats")),
+            (
+                "Shadow Brute",
+                ("Schattenbestie", TermKind::Monster, "Data/Monsters"),
+            ),
+            (
+                "The Brave Little Sapling",
+                ("Der tapfere kleine Setzling", TermKind::Movie, "Movies"),
+            ),
+            (
+                "Cotton Candy",
+                ("Zuckerwatte", TermKind::Item, "MovieConcessions"),
+            ),
+        ] {
+            assert_eq!(find(source), Some(expected), "{source}");
+        }
+        for absent in [
+            "Well",
+            "Bat",
+            "Inventory",
+            "1 Willow Lane",
+            "Void Egg",
+            "A Brave Little Tale",
+        ] {
+            assert!(find(absent).is_none(), "{absent} must not be a term");
+        }
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1313,6 +1751,12 @@ mod tests {
             r#"{ "24": "พาร์สนิป", "78": "Cave Carrot" }"#,
         );
         write(&pack.join("NPCNames.json"), r#"{ "Abigail": "อบิเกล" }"#);
+        // The newer `Strings` name groups come from the pack as well.
+        write_bytes(
+            &english.join("Buildings.xnb"),
+            &test_xnb_dictionary(&[("Coop_Name", "Coop")]),
+        );
+        write(&pack.join("Buildings.json"), r#"{ "Coop_Name": "เล้าไก่" }"#);
 
         let glossary = build_from_pack(
             &english,
@@ -1330,6 +1774,7 @@ mod tests {
         let find = |source: &str| glossary.entries.iter().find(|e| e.source == source);
         assert_eq!(find("Parsnip").map(|e| e.kind), Some(TermKind::Item));
         assert_eq!(find("Abigail").map(|e| e.kind), Some(TermKind::Npc));
+        assert_eq!(find("Coop").map(|e| e.kind), Some(TermKind::Building));
         // The untranslated (English-identical) value is dropped by the gate.
         assert!(find("Cave Carrot").is_none());
 
@@ -1437,9 +1882,13 @@ mod tests {
                 None
             }
         };
+        let path_of = |file: String| match file.strip_prefix("Data/") {
+            Some(file) => strings.parent().unwrap().join("Data").join(file),
+            None => strings.join(file),
+        };
         build_entries(
-            &|asset| read(strings.join(format!("{asset}.xnb"))),
-            &|asset| read(strings.join(format!("{asset}.de-DE.xnb"))),
+            &|asset| read(path_of(format!("{asset}.xnb"))),
+            &|asset| read(path_of(format!("{asset}.de-DE.xnb"))),
             "de",
         )
     }
@@ -1493,6 +1942,54 @@ mod tests {
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
         assert_eq!(built.term_count, direct.len());
         eprintln!("glossary: direct XNB terms {}", direct.len());
+
+        // Spot checks for the Strings and Data name groups (German 1.6).
+        let find = |source: &str| {
+            built
+                .entries
+                .iter()
+                .find(|entry| entry.source == source)
+                .map(|entry| (entry.target.as_str(), entry.kind))
+        };
+        for (source, target, kind) in [
+            (
+                "Feast of the Winter Star",
+                "Fest des Wintersterns",
+                TermKind::Festival,
+            ),
+            (
+                "Stardew Valley Fair",
+                "Sternentautaler Volksfest",
+                TermKind::Festival,
+            ),
+            ("Pelican Town", "Pelikan", TermKind::Location),
+            (
+                "Stardrop Saloon",
+                "Kneipe zum Sternenfall",
+                TermKind::Location,
+            ),
+            ("Ginger Island", "Ingwerinsel", TermKind::Location),
+            ("Pantry", "Speisekammer", TermKind::Location),
+            ("Barn", "Stall", TermKind::Building),
+            ("Slime Hutch", "Schleim-Stall", TermKind::Building),
+            ("Void Chicken", "Schattenhuhn", TermKind::Animal),
+            ("Rubber Boots", "Regenstiefel", TermKind::Clothing),
+            ("Top Hat", "Zylinder", TermKind::Clothing),
+            ("Shadow Brute", "Schattenbestie", TermKind::Monster),
+            (
+                "It Howls In The Rain",
+                "Das Geheul im Regen",
+                TermKind::Movie,
+            ),
+        ] {
+            assert_eq!(find(source), Some((target, kind)), "{source}");
+        }
+        for target in ["Verlassen", "Laden", "Regeln", "Tipp", "Tiere kaufen"] {
+            assert!(
+                !built.entries.iter().any(|entry| entry.target == target),
+                "{target}"
+            );
+        }
     }
 
     #[test]
@@ -1576,14 +2073,14 @@ mod tests {
     }
 
     #[test]
-    fn save_then_load_roundtrips_per_language_at_format_2() {
+    fn save_then_load_roundtrips_per_language_at_the_current_format() {
         let dir = crate::test_support::temp_dir("glossary-cache");
         let glossary = glossary_for("de", vec![entry("Spring", "Frühling", TermKind::Season)]);
         save(&dir, &glossary).unwrap();
 
         let loaded = load(&dir, "de").unwrap();
         assert_eq!(loaded, glossary);
-        assert_eq!(loaded.format, 2);
+        assert_eq!(loaded.format, 3);
         // Stored in the per-language subfolder.
         assert!(dir.join("glossary").join("glossary-de.json").is_file());
 
@@ -1619,6 +2116,50 @@ mod tests {
         );
         assert_eq!(load(&dir, "de"), None);
         assert!(dir.join("glossary").join("glossary-de.json").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_keeps_a_format_2_cache_and_flags_it_for_a_rebuild() {
+        // A cache from before the festival/place/building groups still gives
+        // hints; the status only recommends a rebuild to add the new names.
+        let dir = crate::test_support::temp_dir("glossary-format-2");
+        write(
+            &dir.join("glossary").join("glossary-de.json"),
+            r#"{ "format": 2, "sourceLang": "default", "targetLang": "de", "termCount": 1,
+                 "entries": [ { "source": "Parsnip", "target": "Pastinake", "kind": "item",
+                                "asset": "Objects", "key": "24" } ] }"#,
+        );
+        let loaded = load(&dir, "de").expect("a format-2 cache still loads");
+        assert_eq!(loaded.entries[0].kind, TermKind::Item);
+        assert!(loaded.format < GLOSSARY_FORMAT);
+        assert_eq!(
+            match_terms("A Parsnip.", &loaded),
+            vec![("Parsnip".to_string(), "Pastinake".to_string())]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_tolerates_term_kinds_and_formats_from_a_newer_app() {
+        // A newer app may add kinds (and bump the format); its cache must not
+        // switch the whole glossary off here.
+        let dir = crate::test_support::temp_dir("glossary-newer-kinds");
+        write(
+            &dir.join("glossary").join("glossary-de.json"),
+            r#"{ "format": 4, "sourceLang": "default", "targetLang": "de", "termCount": 2,
+                 "entries": [
+                   { "source": "Parsnip", "target": "Pastinake", "kind": "item",
+                     "asset": "Objects", "key": "24" },
+                   { "source": "Junimo Kart", "target": "Junimo-Kart", "kind": "arcadeGame",
+                     "asset": "Minigames", "key": "JunimoKart" } ] }"#,
+        );
+        let loaded = load(&dir, "de").expect("unknown kinds do not fail the cache");
+        assert!(loaded.format >= GLOSSARY_FORMAT);
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[1].kind, TermKind::Unknown);
+        let hits = match_terms("Play Junimo Kart with a Parsnip.", &loaded);
+        assert_eq!(hits.len(), 2, "{hits:?}");
         std::fs::remove_dir_all(&dir).ok();
     }
 

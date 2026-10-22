@@ -1523,13 +1523,17 @@ fn glossary_status(
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
-    let cached =
-        load_active_glossary(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
+    let active = load_active_glossary(&config, &target_lang);
+    let cached = active.as_ref().map(glossary::GlossaryInfo::of);
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     // It only needs a rebuild while this language has no current glossary;
-    // otherwise the note would never go away.
-    let mut outdated_cache = cached.is_none() && glossary::legacy_cache_present(&config);
+    // otherwise the note would never go away. A usable cache from before the
+    // current term groups also asks for a rebuild, while its hints keep working.
+    let mut outdated_cache = match &active {
+        Some(active) => active.format < glossary::GLOSSARY_FORMAT,
+        None => glossary::legacy_cache_present(&config),
+    };
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
@@ -1544,20 +1548,28 @@ fn glossary_status(
     let pack_xnb_available = detected
         .as_ref()
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
-    // A language the game lacks can only be rebuilt from a language pack;
-    // without one, a rebuild note could never be acted on.
-    if glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none() {
-        outdated_cache = false;
-    }
+    let source_available = glossary::source_available(stardew);
+    // A rebuild note that could never be acted on is dropped.
+    outdated_cache &= rebuild_possible(
+        source_available,
+        glossary::game_locale_suffix(&target_lang).is_some(),
+        detected.is_some(),
+    );
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
-        source_available: glossary::source_available(stardew),
+        source_available,
         cached,
         outdated_cache,
         pack_available: detected.is_some(),
         pack_xnb_available,
         pack_name: detected.map(|pack| pack.name),
     })
+}
+
+/// A rebuild needs the game's Strings and, for a language the game lacks, a
+/// language pack; without them, a rebuild note could never be acted on.
+fn rebuild_possible(source_available: bool, game_language: bool, pack_found: bool) -> bool {
+    source_available && (game_language || pack_found)
 }
 
 /// List models from an OpenAI-compatible local server. Doubles as
@@ -2279,6 +2291,25 @@ fn with_review_warning(
         (error, warning) => error.or(warning),
     };
     (outcome, error)
+}
+
+#[cfg(test)]
+mod rebuild_possible_tests {
+    use super::rebuild_possible;
+
+    #[test]
+    fn rebuild_needs_the_game_strings_and_a_source_for_the_language() {
+        // (source_available, game_language, pack_found, expected)
+        for (source, game, pack, expected) in [
+            (true, true, false, true),
+            (true, false, true, true),
+            (true, false, false, false),
+            (false, true, false, false),
+            (false, false, true, false),
+        ] {
+            assert_eq!(rebuild_possible(source, game, pack), expected);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -343,11 +343,15 @@ command writes to the Mods folder.
 
 ## Optional Glossary and AI
 
-The glossary supplies high-confidence names for items, tools, weapons, clothing,
-NPCs, locations, and seasons, not prose. Built-in languages read the game's
-`Content/Strings/*.xnb` dictionaries directly; no unpacking tool is needed.
-Custom-language packs may supply local `Strings` JSON or XNB files, paired with
-the English names from the same game files.
+The glossary supplies high-confidence names for items, tools, weapons, clothing
+(including boots and hats), NPCs, places, festivals, farm buildings, farm
+animals, monsters, movies, and seasons, not prose. Built-in languages read the
+game's `Content/Strings/*.xnb` dictionaries and the string dictionaries
+`Data/Boots`, `Data/hats`, `Data/Monsters`, and `Data/Festivals/FestivalDates`
+directly; no unpacking tool is needed. Custom-language packs may supply local
+`Strings` JSON or XNB files, paired with the English names from the same game
+files. A glossary built by an older app version keeps working and is marked for
+a rebuild when a rebuild is possible; a term category the app does not know does not disable the glossary.
 Pack inspection is read-only and limited to language registration and string
 assets. Missing glossary data never blocks the core workflow; glossaries are
 stored per language and never bundled with the app.

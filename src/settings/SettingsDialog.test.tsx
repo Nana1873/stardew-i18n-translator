@@ -834,7 +834,48 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
     expect(
-      await screen.findByText(/Rebuild it to\s+get hints again/i),
+      await screen.findByText(/Rebuild it to get hints again/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Outdated", {
+        selector: ".translator-setting-line > .translator-state",
+      }),
+    ).toHaveClass("translator-state", "is-review");
+  });
+
+  it("flags an older but usable glossary for a rebuild", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          gameXnbPresent: true,
+          sourceAvailable: true,
+          cached: { targetLang: "de", termCount: 120, source: "official" },
+          outdatedCache: true,
+          packAvailable: false,
+          packXnbAvailable: false,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(
+      await screen.findByText("Glossary needs an update"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Rebuild it to get all current hints/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Outdated")).toHaveClass("is-review");
+    expect(
+      screen.getByRole("button", { name: /Rebuild glossary/ }),
     ).toBeInTheDocument();
   });
 
@@ -875,14 +916,14 @@ describe("SettingsDialog", () => {
     );
   });
 
-  it("shows unavailable and outdated glossary states as warning chips", async () => {
+  it("shows the unavailable glossary state as a neutral chip", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
           sourceAvailable: false,
           cached: null,
-          outdatedCache: true,
+          outdatedCache: false,
           packAvailable: false,
           packXnbAvailable: false,
         });
@@ -904,10 +945,6 @@ describe("SettingsDialog", () => {
     });
     // Translation still works fully, so this is a neutral note, not a warning.
     expect(unavailable).not.toHaveClass("is-review");
-    const outdated = await screen.findByText("Outdated", {
-      selector: ".translator-setting-line > .translator-state",
-    });
-    expect(outdated).toHaveClass("translator-state", "is-review");
     expect(
       screen.queryByText("Built glossaries are saved right away."),
     ).toBeNull();

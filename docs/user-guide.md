@@ -166,10 +166,11 @@ diagnostic logging setting does not control this panel.
 Open **Settings > Glossary** and choose **Build glossary** when sources are
 available, or **Rebuild glossary** when the cache needs refreshing.
 
-Built-in glossaries come straight from the game's `Content/Strings` XNB files;
-no unpacking tool is needed. Supported community language packs can supply local
-Strings dictionaries for custom targets, paired with the English names from the
-same game files. Missing sources simply leave the
+Built-in glossaries come straight from the game's `Content/Strings` and a few
+`Content/Data` XNB files; no unpacking tool is needed. If the glossary needs an
+update after an app update, its hints keep working until you rebuild it.
+Supported community language packs can supply local Strings dictionaries for
+custom targets, paired with the English names from the same game files. Missing sources simply leave the
 glossary unavailable; editing and export still work.
 
 The glossary supplies hints for recognized names and terms. It does not
