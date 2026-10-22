@@ -23,7 +23,7 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
-- Menu choices such as Leave and Shop are no longer glossary terms.
+- Menu choices such as Leave and Shop are no longer glossary terms after rebuilding the glossary.
 
 ## [2.5.1] - 2026-10-14
 

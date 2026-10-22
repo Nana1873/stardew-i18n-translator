@@ -131,6 +131,8 @@ enum KeyRule {
     Prefixes(&'static [&'static str]),
     /// Only keys ending with this suffix (`_Title`).
     Suffix(&'static str),
+    /// Keys starting with the prefix, or exactly the one extra key.
+    PrefixOrKey(&'static str, &'static str),
 }
 
 /// One asset the glossary reads: which keys and which part of each value hold a
@@ -272,7 +274,7 @@ const NAME_ASSETS: &[AssetSpec] = &[
         asset: "StringsFromCSFiles",
         kind: TermKind::Location,
         // `IslandName` is the only plain `Ginger Island` string in the game.
-        rule: KeyRule::Prefixes(&["MapPage.cs.", "IslandName"]),
+        rule: KeyRule::PrefixOrKey("MapPage.cs.", "IslandName"),
         value: ValuePart::FirstLine,
         ..NAME
     },
@@ -710,6 +712,9 @@ pub fn build_from_pack(
     let english_read = std::cell::Cell::new(false);
     let entries = build_entries(
         &|asset| {
+            if asset.starts_with("Data/") {
+                return None;
+            }
             let file = format!("{asset}.xnb");
             let path = game_strings.join(&file);
             if !path.is_file() {
@@ -775,6 +780,7 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
         ),
         KeyRule::Prefixes(prefixes) => prefixes.iter().any(|prefix| key.starts_with(prefix)),
         KeyRule::Suffix(suffix) => key.ends_with(suffix),
+        KeyRule::PrefixOrKey(prefix, exact) => key.starts_with(prefix) || key == exact,
     }
 }
 
@@ -1502,8 +1508,14 @@ mod tests {
         );
         pair(
             "Strings/FarmAnimals",
-            &[("DisplayType_VoidChicken", "Void Chicken")],
-            &[("DisplayType_VoidChicken", "Schattenhuhn")],
+            &[
+                ("DisplayType_VoidChicken", "Void Chicken"),
+                ("Void_Egg", "Void Egg"),
+            ],
+            &[
+                ("DisplayType_VoidChicken", "Schattenhuhn"),
+                ("Void_Egg", "Schattenei"),
+            ],
         );
         pair(
             "Data/Boots",
@@ -1544,8 +1556,14 @@ mod tests {
         );
         pair(
             "Strings/Movies",
-            &[("BraveSapling_Title", "The Brave Little Sapling")],
-            &[("BraveSapling_Title", "Der tapfere kleine Setzling")],
+            &[
+                ("BraveSapling_Title", "The Brave Little Sapling"),
+                ("BraveSapling_Description", "A Brave Little Tale"),
+            ],
+            &[
+                ("BraveSapling_Title", "Der tapfere kleine Setzling"),
+                ("BraveSapling_Description", "Ein tapferes Maerchen"),
+            ],
         );
         pair(
             "Strings/MovieConcessions",
@@ -1615,7 +1633,14 @@ mod tests {
         ] {
             assert_eq!(find(source), Some(expected), "{source}");
         }
-        for absent in ["Well", "Bat", "Inventory", "1 Willow Lane"] {
+        for absent in [
+            "Well",
+            "Bat",
+            "Inventory",
+            "1 Willow Lane",
+            "Void Egg",
+            "A Brave Little Tale",
+        ] {
             assert!(find(absent).is_none(), "{absent} must not be a term");
         }
 

@@ -1549,13 +1549,12 @@ fn glossary_status(
         .as_ref()
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
     let source_available = glossary::source_available(stardew);
-    // A rebuild needs the game's Strings and, for a language the game lacks, a
-    // language pack; without them, a rebuild note could never be acted on.
-    if !source_available
-        || (glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none())
-    {
-        outdated_cache = false;
-    }
+    // A rebuild note that could never be acted on is dropped.
+    outdated_cache &= rebuild_possible(
+        source_available,
+        glossary::game_locale_suffix(&target_lang).is_some(),
+        detected.is_some(),
+    );
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
         source_available,
@@ -1565,6 +1564,12 @@ fn glossary_status(
         pack_xnb_available,
         pack_name: detected.map(|pack| pack.name),
     })
+}
+
+/// A rebuild needs the game's Strings and, for a language the game lacks, a
+/// language pack; without them, a rebuild note could never be acted on.
+fn rebuild_possible(source_available: bool, game_language: bool, pack_found: bool) -> bool {
+    source_available && (game_language || pack_found)
 }
 
 /// List models from an OpenAI-compatible local server. Doubles as
@@ -2286,6 +2291,25 @@ fn with_review_warning(
         (error, warning) => error.or(warning),
     };
     (outcome, error)
+}
+
+#[cfg(test)]
+mod rebuild_possible_tests {
+    use super::rebuild_possible;
+
+    #[test]
+    fn rebuild_needs_the_game_strings_and_a_source_for_the_language() {
+        // (source_available, game_language, pack_found, expected)
+        for (source, game, pack, expected) in [
+            (true, true, false, true),
+            (true, false, true, true),
+            (true, false, false, false),
+            (false, true, false, false),
+            (false, false, true, false),
+        ] {
+            assert_eq!(rebuild_possible(source, game, pack), expected);
+        }
+    }
 }
 
 #[cfg(test)]

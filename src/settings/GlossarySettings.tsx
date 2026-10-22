@@ -215,8 +215,9 @@ export function GlossarySettings({
             <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
-                Your glossary is from an older version of the app. Rebuild it to
-                get all current hints.
+                {cached
+                  ? "Your glossary is from an older version of the app. Rebuild it to get all current hints."
+                  : "Your glossary is from an older version of the app and can no longer be used. Rebuild it to get hints again."}
               </span>
             </span>
             <span className="translator-state is-review">Outdated</span>

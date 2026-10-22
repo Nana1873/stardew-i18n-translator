@@ -351,7 +351,7 @@ game's `Content/Strings/*.xnb` dictionaries and the string dictionaries
 directly; no unpacking tool is needed. Custom-language packs may supply local
 `Strings` JSON or XNB files, paired with the English names from the same game
 files. A glossary built by an older app version keeps working and is marked for
-a rebuild; a term category the app does not know does not disable the glossary.
+a rebuild when a rebuild is possible; a term category the app does not know does not disable the glossary.
 Pack inspection is read-only and limited to language registration and string
 assets. Missing glossary data never blocks the core workflow; glossaries are
 stored per language and never bundled with the app.
