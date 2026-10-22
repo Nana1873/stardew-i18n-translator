@@ -351,9 +351,7 @@ const CURATED_ASSET: &str = "curated";
 /// Valley" is left out on purpose: mod text often means the game itself
 /// ("Stardew Valley Expanded"), where Sternentautal would be a false hint.
 const CURATED_DE: &[(&str, &str)] = &[
-    ("JojaMart", "Joja-Markt"),
     ("Skull Cavern", "Schädelhöhle"),
-    ("Cindersap Forest", "Zundersaftwald"),
     ("Gem Sea", "Edelsteinsee"),
 ];
 
@@ -2064,9 +2062,8 @@ mod tests {
         let built =
             build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
         eprintln!("glossary: direct XNB terms {}", direct.len());
-        // German 1.6 already defines some curated terms (JojaMart, Cindersap
-        // Forest) in StringsFromCSFiles, so only require each curated name,
-        // curated or asset-derived.
+        // Require each curated name, curated or asset-derived, so a future
+        // game update that adds one as an asset does not fail the test.
         for (source, target) in CURATED_DE {
             assert!(
                 built
