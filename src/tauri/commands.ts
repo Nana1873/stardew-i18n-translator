@@ -736,7 +736,8 @@ export interface GlossaryStatus {
   /** The game's Content/Strings XNB files are available for glossary extraction (same as gameXnbPresent). */
   sourceAvailable: boolean;
   cached: GlossaryInfo | null;
-  /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
+  /** The cache is from an older app version or invalid — rebuild recommended.
+   * False when no rebuild is possible. */
   outdatedCache: boolean;
   /**
    * For a game-unsupported language, whether an installed community language pack
@@ -794,8 +795,7 @@ export interface GlossaryEntry {
 }
 
 export interface Glossary {
-  /** Cache schema version (2 = typed entries, 3 = with the festival, place,
-   * building, animal, boots, hat, monster and movie groups). */
+  /** Cache schema version (2 = typed entries, 3 = more name groups). */
   format: number;
   sourceLang: string;
   targetLang: string;

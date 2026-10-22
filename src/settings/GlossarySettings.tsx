@@ -32,7 +32,7 @@ export function GlossarySettings({
   const available = Boolean(
     glossary?.sourceAvailable && (supported || glossary.packAvailable),
   );
-  const usableCache = Boolean(cached && !glossary?.outdatedCache);
+  const usableCache = Boolean(cached);
   const canBuild = Boolean(
     targetLang &&
     glossary &&
@@ -169,7 +169,7 @@ export function GlossarySettings({
             <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
-                {cached && !glossary.outdatedCache
+                {cached
                   ? supported || !glossary.sourceAvailable
                     ? "Your glossary stays available. Rebuilding it needs the game's text files (Content/Strings), which weren't found."
                     : "Your glossary stays available. Rebuilding it needs the community language pack, which wasn't found in your Mods folder."
@@ -215,9 +215,8 @@ export function GlossarySettings({
             <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
-                {cached
-                  ? "Your glossary is from an older version of the app. Its hints still work; rebuild it to add the newer names."
-                  : "Your glossary is from an older version of the app. Rebuild it to get hints again."}
+                Your glossary is from an older version of the app. Rebuild it to
+                get all current hints.
               </span>
             </span>
             <span className="translator-state is-review">Outdated</span>

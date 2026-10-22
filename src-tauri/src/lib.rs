@@ -1531,7 +1531,7 @@ fn glossary_status(
     // otherwise the note would never go away. A usable cache from before the
     // current term groups also asks for a rebuild, while its hints keep working.
     let mut outdated_cache = match &active {
-        Some(active) => glossary::is_outdated(active),
+        Some(active) => active.format < glossary::GLOSSARY_FORMAT,
         None => glossary::legacy_cache_present(&config),
     };
     // For a game-unsupported language, see whether an installed community pack
@@ -1548,14 +1548,17 @@ fn glossary_status(
     let pack_xnb_available = detected
         .as_ref()
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
-    // A language the game lacks can only be rebuilt from a language pack;
-    // without one, a rebuild note could never be acted on.
-    if glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none() {
+    let source_available = glossary::source_available(stardew);
+    // A rebuild needs the game's Strings and, for a language the game lacks, a
+    // language pack; without them, a rebuild note could never be acted on.
+    if !source_available
+        || (glossary::game_locale_suffix(&target_lang).is_none() && detected.is_none())
+    {
         outdated_cache = false;
     }
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
-        source_available: glossary::source_available(stardew),
+        source_available,
         cached,
         outdated_cache,
         pack_available: detected.is_some(),

@@ -18,7 +18,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - The glossary now also knows festival names, places such as Pelican Town and
   the Stardrop Saloon, farm buildings, farm animals, boots, hats, monsters,
   movies, and movie snacks. Rebuild the glossary in Settings to add them; an
-  older glossary keeps working until then.
+  older glossary keeps working until then. After going back to 2.5.1 or older,
+  rebuild a glossary built by this version.
+
+### Fixed
+
+- Menu choices such as Leave and Shop are no longer glossary terms.
 
 ## [2.5.1] - 2026-10-14
 

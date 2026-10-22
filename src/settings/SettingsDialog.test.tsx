@@ -834,39 +834,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
     expect(
-      await screen.findByText(/Rebuild it to\s+get hints again/i),
-    ).toBeInTheDocument();
-  });
-
-  it("keeps an older usable glossary and recommends a rebuild for newer names", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "glossary_status")
-        return Promise.resolve({
-          gameXnbPresent: true,
-          sourceAvailable: true,
-          cached: { targetLang: "de", termCount: 12, source: "official" },
-          outdatedCache: true,
-          packAvailable: false,
-          packXnbAvailable: false,
-        });
-      return Promise.resolve(null);
-    });
-
-    render(
-      <SettingsDialog
-        settings={baseSettings}
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
-    expect(
-      await screen.findByText(/Its hints still work; rebuild it/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Rebuild glossary" }),
+      await screen.findByText(/Rebuild it to\s+get all current hints/i),
     ).toBeInTheDocument();
   });
 
